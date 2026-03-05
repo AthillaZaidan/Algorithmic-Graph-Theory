@@ -9,47 +9,153 @@ interface GraphInputProps {
 
 export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputProps) {
   const [numVertices, setNumVertices] = useState(5);
-  const [edgeText, setEdgeText] = useState("0 1\n1 2\n2 3\n3 4");
+  const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
+
+  // Input fields for adding edge
+  const [edgeSrc, setEdgeSrc] = useState("");
+  const [edgeDest, setEdgeDest] = useState("");
   const [error, setError] = useState("");
 
-  const parseAndUpdate = useCallback(
-    (nv: number, text: string) => {
-      setError("");
-      const edges: number[][] = [];
-      const lines = text.trim().split("\n").filter((l) => l.trim());
-
-      for (const line of lines) {
-        const parts = line.trim().split(/[\s,]+/).map(Number);
-        if (parts.length !== 2 || parts.some(isNaN)) {
-          setError(`Invalid edge format: "${line}". Use "u v" format.`);
-          return;
-        }
-        const [u, v] = parts;
-        if (u < 0 || u >= nv || v < 0 || v >= nv) {
-          setError(`Edge ${u}-${v} out of bounds (0 to ${nv - 1})`);
-          return;
-        }
-        if (u === v) {
-          setError(`Self-loop not allowed: ${u}-${v}`);
-          return;
-        }
-        edges.push([u, v]);
-      }
-      onGraphChange(nv, edges);
+  const emitChange = useCallback(
+    (nv: number, e: number[][]) => {
+      onGraphChange(nv, e);
     },
     [onGraphChange]
   );
 
-  const handleVerticesChange = (val: string) => {
-    const n = parseInt(val) || 0;
-    const clamped = Math.max(1, Math.min(n, maxNodes));
-    setNumVertices(clamped);
-    parseAndUpdate(clamped, edgeText);
+  // --- Node Operations ---
+  const addNode = () => {
+    if (numVertices >= maxNodes) {
+      setError(`Max ${maxNodes} nodes`);
+      return;
+    }
+    setError("");
+    const newN = numVertices + 1;
+    setNumVertices(newN);
+    emitChange(newN, edges);
   };
 
-  const handleEdgeTextChange = (val: string) => {
-    setEdgeText(val);
-    parseAndUpdate(numVertices, val);
+  const removeNode = () => {
+    if (numVertices <= 1) {
+      setError("Minimal 1 node");
+      return;
+    }
+    setError("");
+    const newN = numVertices - 1;
+    // Remove edges that reference the deleted node
+    const newEdges = edges.filter(([u, v]) => u < newN && v < newN);
+    setNumVertices(newN);
+    setEdges(newEdges);
+    emitChange(newN, newEdges);
+  };
+
+  const setNodeCount = (val: string) => {
+    const n = parseInt(val) || 0;
+    const clamped = Math.max(1, Math.min(n, maxNodes));
+    setError("");
+    const newEdges = edges.filter(([u, v]) => u < clamped && v < clamped);
+    setNumVertices(clamped);
+    setEdges(newEdges);
+    emitChange(clamped, newEdges);
+  };
+
+  // --- Edge Operations ---
+  const addEdge = () => {
+    const u = parseInt(edgeSrc);
+    const v = parseInt(edgeDest);
+    if (isNaN(u) || isNaN(v)) {
+      setError("Masukkan angka untuk kedua node");
+      return;
+    }
+    if (u < 0 || u >= numVertices || v < 0 || v >= numVertices) {
+      setError(`Node harus antara 0 - ${numVertices - 1}`);
+      return;
+    }
+    if (u === v) {
+      setError("Self-loop tidak diperbolehkan");
+      return;
+    }
+    // Check duplicate
+    if (edges.some(([a, b]) => (a === u && b === v) || (a === v && b === u))) {
+      setError(`Edge ${u}-${v} sudah ada`);
+      return;
+    }
+    setError("");
+    const newEdges = [...edges, [u, v]];
+    setEdges(newEdges);
+    setEdgeSrc("");
+    setEdgeDest("");
+    emitChange(numVertices, newEdges);
+  };
+
+  const removeEdge = (idx: number) => {
+    setError("");
+    const newEdges = edges.filter((_, i) => i !== idx);
+    setEdges(newEdges);
+    emitChange(numVertices, newEdges);
+  };
+
+  const clearAllEdges = () => {
+    setError("");
+    setEdges([]);
+    emitChange(numVertices, []);
+  };
+
+  const resetGraph = () => {
+    setError("");
+    setNumVertices(5);
+    setEdges([[0, 1], [1, 2], [2, 3], [3, 4]]);
+    setEdgeSrc("");
+    setEdgeDest("");
+    emitChange(5, [[0, 1], [1, 2], [2, 3], [3, 4]]);
+  };
+
+  const generateRandom = () => {
+    setError("");
+    const n = numVertices;
+    const maxEdgeCount = Math.min(n * (n - 1) / 2, n * 2);
+    const edgeCount = Math.max(n - 1, Math.floor(Math.random() * maxEdgeCount) + 1);
+    const edgeSet = new Set<string>();
+    const newEdges: number[][] = [];
+
+    // Ensure connected: create a spanning tree first
+    const shuffled = Array.from({ length: n }, (_, i) => i);
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    for (let i = 1; i < n; i++) {
+      const u = shuffled[i - 1];
+      const v = shuffled[i];
+      const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
+      edgeSet.add(key);
+      newEdges.push([u, v]);
+    }
+
+    // Add extra random edges
+    let attempts = 0;
+    while (newEdges.length < edgeCount && attempts < 500) {
+      const u = Math.floor(Math.random() * n);
+      const v = Math.floor(Math.random() * n);
+      if (u !== v) {
+        const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key);
+          newEdges.push([u, v]);
+        }
+      }
+      attempts++;
+    }
+
+    setEdges(newEdges);
+    emitChange(n, newEdges);
+  };
+
+  const handleEdgeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addEdge();
+    }
   };
 
   return (
@@ -64,45 +170,124 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
         Graph Input
       </h3>
 
+      {/* Node Controls */}
       <div>
-        <label className="block text-sm text-white/60 mb-1">
-          Number of Vertices (max {maxNodes})
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={maxNodes}
-          value={numVertices}
-          onChange={(e) => handleVerticesChange(e.target.value)}
-          className="glass-input w-full"
-        />
+        <label className="block text-xs text-white/50 uppercase tracking-wider mb-2">Nodes</label>
+        <div className="flex items-center gap-2">
+          <button onClick={removeNode} className="glass-btn px-3 py-2 rounded-lg text-red-400 font-bold text-lg hover:bg-red-400/15" title="Remove last node">
+            −
+          </button>
+          <input
+            type="number"
+            min={1}
+            max={maxNodes}
+            value={numVertices}
+            onChange={(e) => setNodeCount(e.target.value)}
+            className="glass-input w-20 text-center font-mono font-bold text-lg"
+          />
+          <button onClick={addNode} className="glass-btn px-3 py-2 rounded-lg text-emerald-400 font-bold text-lg hover:bg-emerald-400/15" title="Add node">
+            +
+          </button>
+          <span className="text-white/30 text-xs ml-1">node (0-{numVertices - 1})</span>
+        </div>
       </div>
 
+      {/* Add Edge */}
       <div>
-        <label className="block text-sm text-white/60 mb-1">
-          Edges (one per line, format: &quot;u v&quot;)
-        </label>
-        <textarea
-          rows={6}
-          value={edgeText}
-          onChange={(e) => handleEdgeTextChange(e.target.value)}
-          className="glass-input w-full font-mono text-sm resize-y"
-          placeholder={"0 1\n1 2\n2 3"}
-        />
+        <label className="block text-xs text-white/50 uppercase tracking-wider mb-2">Add Edge</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={numVertices - 1}
+            value={edgeSrc}
+            onChange={(e) => setEdgeSrc(e.target.value)}
+            onKeyDown={handleEdgeKeyDown}
+            placeholder="u"
+            className="glass-input w-16 text-center font-mono"
+          />
+          <span className="text-white/40 font-bold">—</span>
+          <input
+            type="number"
+            min={0}
+            max={numVertices - 1}
+            value={edgeDest}
+            onChange={(e) => setEdgeDest(e.target.value)}
+            onKeyDown={handleEdgeKeyDown}
+            placeholder="v"
+            className="glass-input w-16 text-center font-mono"
+          />
+          <button
+            onClick={addEdge}
+            className="glass-btn px-4 py-2 rounded-lg text-cyan-400 text-sm font-semibold hover:bg-cyan-400/15 flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add
+          </button>
+        </div>
       </div>
 
+      {/* Edge List */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-white/50 uppercase tracking-wider">Edges ({edges.length})</label>
+          <div className="flex gap-1.5">
+            <button onClick={clearAllEdges} className="text-xs text-red-400/70 hover:text-red-400 transition-colors" title="Clear all edges">
+              Clear
+            </button>
+            <span className="text-white/20">|</span>
+            <button onClick={generateRandom} className="text-xs text-purple-400/70 hover:text-purple-400 transition-colors" title="Random graph">
+              Random
+            </button>
+            <span className="text-white/20">|</span>
+            <button onClick={resetGraph} className="text-xs text-amber-400/70 hover:text-amber-400 transition-colors" title="Reset to default">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+          {edges.length === 0 ? (
+            <p className="text-white/20 text-xs italic py-2">Belum ada edge. Tambahkan dengan form di atas.</p>
+          ) : (
+            edges.map(([u, v], idx) => (
+              <div key={idx} className="flex items-center justify-between py-1 px-2 rounded-md bg-white/[0.03] hover:bg-white/[0.06] group transition-colors">
+                <span className="text-sm font-mono text-white/70">
+                  <span className="text-cyan-400/80">{u}</span>
+                  <span className="text-white/30 mx-2">↔</span>
+                  <span className="text-teal-400/80">{v}</span>
+                </span>
+                <button
+                  onClick={() => removeEdge(idx)}
+                  className="text-red-400/0 group-hover:text-red-400/70 hover:!text-red-400 transition-all text-xs"
+                  title={`Delete edge ${u}-${v}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Error */}
       {error && (
         <div className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
           {error}
         </div>
       )}
 
-      <div className="flex gap-3 text-xs text-white/40">
-        <span>Nodes: {numVertices}</span>
-        <span>|</span>
-        <span>
-          Edges: {edgeText.trim().split("\n").filter((l) => l.trim()).length}
-        </span>
+      {/* Stats */}
+      <div className="flex gap-3 text-xs text-white/40 pt-1 border-t border-white/[0.06]">
+        <span>Nodes: <span className="text-white/60 font-mono">{numVertices}</span></span>
+        <span className="text-white/15">|</span>
+        <span>Edges: <span className="text-white/60 font-mono">{edges.length}</span></span>
+        <span className="text-white/15">|</span>
+        <span>Max: <span className="text-white/60 font-mono">{numVertices * (numVertices - 1) / 2}</span></span>
       </div>
     </div>
   );

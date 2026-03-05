@@ -10,8 +10,7 @@ using json = nlohmann::json;
 using namespace std;
 
 
-// ========== TUGAS 1 (dari Graph.cpp) ==========
-// Menggunakan class Graph seperti di Graph.cpp
+// ========== TUGAS 1  ==========
 
 class Graph {
 private:
@@ -179,13 +178,12 @@ public:
 };
 
 
-// ========== TUGAS 2 (dari Tugas2.cpp) ==========
-// Menggunakan global adj & visited + fungsi dfsGraph & bfsGrid seperti di Tugas2.cpp
+// ========== TUGAS 2 ==========]
 
 vector<vector<int>> adj;
 vector<bool> visited;
 
-// Recursive DFS untuk cari komponen (sama seperti dfsGraph di Tugas2.cpp)
+// Recursive DFS untuk cari komponen 
 void dfsGraph(int u, vector<int>& nodes) {
     visited[u] = true;
     nodes.push_back(u);
@@ -194,7 +192,7 @@ void dfsGraph(int u, vector<int>& nodes) {
     }
 }
 
-// Hitung Jumlah Komponen (opsi 1 di Tugas2.cpp)
+// Hitung Jumlah Komponen (opsi 1 di  )
 json hitungJumlahKomponen(int N, int M, const vector<pair<int,int>>& edgeList) {
     adj.assign(N + 1, vector<int>());
     visited.assign(N + 1, false);
@@ -228,7 +226,7 @@ json hitungJumlahKomponen(int N, int M, const vector<pair<int,int>>& edgeList) {
     };
 }
 
-// Cari Komponen Terbesar (opsi 2 di Tugas2.cpp)
+// Cari Komponen Terbesar 
 json cariKomponenTerbesar(int N, int M, const vector<pair<int,int>>& edgeList) {
     adj.assign(N + 1, vector<int>());
     visited.assign(N + 1, false);
@@ -272,7 +270,7 @@ json cariKomponenTerbesar(int N, int M, const vector<pair<int,int>>& edgeList) {
 }
 
 
-// BFS Grid untuk hitung island (sama seperti bfsGrid di Tugas2.cpp)
+// BFS Grid untuk hitung island 
 void bfsGrid(int r, int c, vector<vector<char>>& grid, vector<vector<bool>>& vis, vector<vector<int>>& labels, int label) {
     int n = grid.size();
     int m = grid[0].size();
@@ -300,7 +298,7 @@ void bfsGrid(int r, int c, vector<vector<char>>& grid, vector<vector<bool>>& vis
     }
 }
 
-// Hitung Jumlah Island (opsi 3 di Tugas2.cpp)
+// Hitung Jumlah Island 
 json hitungJumlahIsland(const vector<string>& gridRows) {
     int N = gridRows.size();
     if (N == 0) return json{{"count", 0}, {"labels", json::array()}};

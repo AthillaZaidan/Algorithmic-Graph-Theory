@@ -327,9 +327,6 @@ export default function Home() {
             Visualizer
           </span>
         </h1>
-        <p className="text-sm text-white/40 mt-1">
-          Algorithmic Graph Theory — Tugas 1 &amp; 2
-        </p>
       </div>
 
       {/* Operation Tabs */}
