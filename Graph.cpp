@@ -28,7 +28,7 @@ public:
     }
     // validasi self-loop
     if (src == dest) {
-      cout << "Self-loop tidak diperbolehkan" << endl;
+      cout << "Self loop tidak diperbolehkan" << endl;
       return;
     }
     // validasi duplicate edge
@@ -220,9 +220,6 @@ public:
     cout << "2. BFS" << endl;
     cout << "3. Cek Path A ke B" << endl;
     cout << "4. Cek Keterhubungan Graf" << endl;
-    cout << "5. Jumlah Komponen" << endl;
-    cout << "6. Komponen Terbesar" << endl;
-    cout << "7. Jumlah Island" << endl;
     cout << "0. Keluar" << endl;
     cout << "==================================" << endl;
   }
