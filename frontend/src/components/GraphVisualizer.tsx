@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -23,7 +23,12 @@ export default function GraphVisualizer({
   componentColors,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
+
+  // Keep stable node references so adding/removing doesn't reset layout
+  const nodesRef = useRef<any[]>([]);
+  const prevVerticesRef = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -54,13 +59,28 @@ export default function GraphVisualizer({
     return s;
   }, [highlightEdges]);
 
+  // Incrementally update nodes to keep existing positions stable
   const graphData = useMemo(() => {
-    const nodes = Array.from({ length: numVertices }, (_, i) => ({
-      id: i,
-      label: `${i}`,
-    }));
+    const prev = nodesRef.current;
+    const prevN = prevVerticesRef.current;
+
+    if (numVertices > prevN) {
+      // Only add new nodes — keep existing ones with their positions
+      const newNodes = [...prev];
+      for (let i = prevN; i < numVertices; i++) {
+        newNodes.push({ id: i, label: `${i}` });
+      }
+      nodesRef.current = newNodes;
+    } else if (numVertices < prevN) {
+      // Trim removed nodes
+      nodesRef.current = prev.slice(0, numVertices);
+    }
+    // else same count — keep as-is
+
+    prevVerticesRef.current = numVertices;
+
     const links = edges.map(([source, target]) => ({ source, target }));
-    return { nodes, links };
+    return { nodes: nodesRef.current, links };
   }, [numVertices, edges]);
 
   return (
