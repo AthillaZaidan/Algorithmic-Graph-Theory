@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -15,12 +15,6 @@ interface GraphVisualizerProps {
   componentColors?: Map<number, string>;
 }
 
-const COLORS = [
-  "#22d3ee", "#2dd4bf", "#a78bfa", "#f472b6",
-  "#fb923c", "#facc15", "#4ade80", "#60a5fa",
-  "#e879f9", "#34d399",
-];
-
 export default function GraphVisualizer({
   numVertices,
   edges,
@@ -29,7 +23,12 @@ export default function GraphVisualizer({
   componentColors,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
+
+  // Keep stable node references so adding/removing doesn't reset layout
+  const nodesRef = useRef<any[]>([]);
+  const prevVerticesRef = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -60,34 +59,29 @@ export default function GraphVisualizer({
     return s;
   }, [highlightEdges]);
 
+  // Incrementally update nodes to keep existing positions stable
   const graphData = useMemo(() => {
-    const nodes = Array.from({ length: numVertices }, (_, i) => ({
-      id: i,
-      label: `${i}`,
-    }));
-    const links = edges.map(([source, target]) => ({ source, target }));
-    return { nodes, links };
-  }, [numVertices, edges]);
+    const prev = nodesRef.current;
+    const prevN = prevVerticesRef.current;
 
-  const getNodeColor = useCallback(
-    (node: { id?: number }) => {
-      const id = node.id ?? 0;
-      if (componentColors && componentColors.has(id)) {
-        return componentColors.get(id)!;
+    if (numVertices > prevN) {
+      // Only add new nodes — keep existing ones with their positions
+      const newNodes = [...prev];
+      for (let i = prevN; i < numVertices; i++) {
+        newNodes.push({ id: i, label: `${i}` });
       }
-      if (highlightNodeSet.has(id)) return "#22d3ee";
-      return "rgba(255,255,255,0.5)";
-    },
-    [highlightNodeSet, componentColors]
-  );
+      nodesRef.current = newNodes;
+    } else if (numVertices < prevN) {
+      // Trim removed nodes
+      nodesRef.current = prev.slice(0, numVertices);
+    }
+    // else same count — keep as-is
 
-  const getNodeSize = useCallback(
-    (node: { id?: number }) => {
-      const id = node.id ?? 0;
-      return highlightNodeSet.has(id) ? 8 : 5;
-    },
-    [highlightNodeSet]
-  );
+    prevVerticesRef.current = numVertices;
+
+    const links = edges.map(([source, target]) => ({ source, target }));
+    return { nodes: nodesRef.current, links };
+  }, [numVertices, edges]);
 
   return (
     <div ref={containerRef} className="glass overflow-hidden" style={{ minHeight: 350 }}>
@@ -96,44 +90,78 @@ export default function GraphVisualizer({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeLabel={(node: { id?: number }) => `Node ${node.id}`}
-          nodeColor={getNodeColor}
-          nodeRelSize={5}
-          nodeVal={getNodeSize}
-          nodeCanvasObjectMode={() => "after"}
-          nodeCanvasObject={(node: { id?: number; x?: number; y?: number }, ctx: CanvasRenderingContext2D) => {
+          nodeLabel={(node: any) => `Node ${node.id}`}
+          nodeRelSize={6}
+          nodeCanvasObjectMode={() => "replace"}
+          nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D) => {
             const id = node.id ?? 0;
             const x = node.x ?? 0;
             const y = node.y ?? 0;
-            ctx.font = "4px sans-serif";
+            const isHighlighted = highlightNodeSet.has(id);
+            const hasCompColor = componentColors && componentColors.has(id);
+            const baseColor = hasCompColor
+              ? componentColors!.get(id)!
+              : isHighlighted
+                ? "#22d3ee"
+                : "rgba(255,255,255,0.6)";
+
+            const radius = isHighlighted ? 10 : 7;
+
+            // Glow effect for highlighted nodes
+            if (isHighlighted || hasCompColor) {
+              ctx.beginPath();
+              ctx.arc(x, y, radius + 6, 0, 2 * Math.PI);
+              ctx.fillStyle = baseColor + "30";
+              ctx.fill();
+            }
+
+            // Node circle
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = baseColor;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.4)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Bold label
+            ctx.font = `bold ${isHighlighted ? "7px" : "6px"} sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = highlightNodeSet.has(id)
-              ? "#ffffff"
-              : "rgba(255,255,255,0.7)";
+            ctx.fillStyle = isHighlighted || hasCompColor ? "#ffffff" : "rgba(255,255,255,0.95)";
             ctx.fillText(`${id}`, x, y);
+          }}
+          linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D) => {
+            const src = link.source as { id?: number; x?: number; y?: number };
+            const tgt = link.target as { id?: number; x?: number; y?: number };
+            if (!src || !tgt || src.x == null || tgt.x == null) return;
 
-            if (highlightNodeSet.has(id)) {
-              ctx.beginPath();
-              ctx.arc(x, y, 10, 0, 2 * Math.PI);
-              ctx.strokeStyle = "rgba(34,211,238,0.3)";
-              ctx.lineWidth = 0.5;
+            const sourceId = src.id ?? 0;
+            const targetId = tgt.id ?? 0;
+            const key = `${sourceId}-${targetId}`;
+            const isHL = highlightEdgeSet.has(key);
+
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y!);
+            ctx.lineTo(tgt.x, tgt.y!);
+
+            if (isHL) {
+              // Glow for highlighted edges
+              ctx.strokeStyle = "rgba(34,211,238,0.25)";
+              ctx.lineWidth = 6;
               ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y!);
+              ctx.lineTo(tgt.x, tgt.y!);
+              ctx.strokeStyle = "#22d3ee";
+              ctx.lineWidth = 3;
+            } else {
+              ctx.strokeStyle = "rgba(255,255,255,0.35)";
+              ctx.lineWidth = 2;
             }
+            ctx.stroke();
           }}
-          linkColor={(link: { source?: { id?: number } | number; target?: { id?: number } | number }) => {
-            const sourceId = typeof link.source === "object" ? link.source?.id : link.source;
-            const targetId = typeof link.target === "object" ? link.target?.id : link.target;
-            const key = `${sourceId}-${targetId}`;
-            if (highlightEdgeSet.has(key)) return "#22d3ee";
-            return "rgba(255,255,255,0.15)";
-          }}
-          linkWidth={(link: { source?: { id?: number } | number; target?: { id?: number } | number }) => {
-            const sourceId = typeof link.source === "object" ? link.source?.id : link.source;
-            const targetId = typeof link.target === "object" ? link.target?.id : link.target;
-            const key = `${sourceId}-${targetId}`;
-            return highlightEdgeSet.has(key) ? 2 : 0.5;
-          }}
+          linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"
           cooldownTime={2000}
           enableZoomInteraction={true}
