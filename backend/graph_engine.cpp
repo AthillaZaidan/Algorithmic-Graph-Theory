@@ -4,6 +4,9 @@
 #include <queue>
 #include <string>
 #include <algorithm>
+#include <functional>
+#include <set>
+#include <climits>
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -340,6 +343,262 @@ json hitungJumlahIsland(const vector<string>& gridRows) {
 }
 
 
+// ========== TUGAS 3 ==========
+
+// Check Bipartite Graph
+json checkBipartite(int N, const vector<pair<int,int>>& edgeList) {
+    adj.assign(N, vector<int>());
+    
+    for (auto& e : edgeList) {
+        int u = e.first;
+        int v = e.second;
+        if (u >= 0 && u < N && v >= 0 && v < N) {
+            adj[u].push_back(v);
+            adj[v].push_back(u);
+        }
+    }
+
+    vector<int> color(N, -1);
+    bool isBipartite = true;
+
+    for (int start = 0; start < N; start++) {
+        if (color[start] != -1) continue;
+
+        queue<int> q;
+        q.push(start);
+        color[start] = 0;
+
+        while (!q.empty() && isBipartite) {
+            int u = q.front();
+            q.pop();
+
+            for (int v : adj[u]) {
+                if (color[v] == -1) {
+                    color[v] = 1 - color[u];
+                    q.push(v);
+                } else if (color[v] == color[u]) {
+                    isBipartite = false;
+                    break;
+                }
+            }
+        }
+        if (!isBipartite) break;
+    }
+
+    json partitionA = json::array();
+    json partitionB = json::array();
+    
+    for (int i = 0; i < N; i++) {
+        if (color[i] == 0) {
+            partitionA.push_back(i);
+        } else if (color[i] == 1) {
+            partitionB.push_back(i);
+        }
+    }
+
+    return json{
+        {"isBipartite", isBipartite},
+        {"partitionA", partitionA},
+        {"partitionB", partitionB}
+    };
+}
+
+// Check Cycle using DFS
+json checkCycle(int N, const vector<pair<int,int>>& edgeList) {
+    adj.assign(N, vector<int>());
+    visited.assign(N, false);
+
+    for (auto& e : edgeList) {
+        int u = e.first;
+        int v = e.second;
+        if (u >= 0 && u < N && v >= 0 && v < N) {
+            adj[u].push_back(v);
+            adj[v].push_back(u);
+        }
+    }
+
+    vector<int> parent(N, -1);
+    vector<int> cyclePath;
+    bool foundCycle = false;
+
+    function<void(int, int)> dfsCycle = [&](int u, int p) {
+        visited[u] = true;
+        parent[u] = p;
+
+        for (int v : adj[u]) {
+            if (!visited[v]) {
+                dfsCycle(v, u);
+            } else if (v != p && !foundCycle) {
+                // Found a cycle
+                foundCycle = true;
+                int curr = u;
+                while (curr != v) {
+                    cyclePath.push_back(curr);
+                    curr = parent[curr];
+                }
+                cyclePath.push_back(v);
+                reverse(cyclePath.begin(), cyclePath.end());
+            }
+        }
+    };
+
+    for (int i = 0; i < N; i++) {
+        if (!visited[i] && !foundCycle) {
+            dfsCycle(i, -1);
+        }
+    }
+
+    return json{
+        {"hasCycle", foundCycle},
+        {"cyclePath", cyclePath}
+    };
+}
+
+// Check diameter by BFS from every node
+json computeDiameter(int N, const vector<pair<int,int>>& edgeList) {
+    adj.assign(N, vector<int>());
+    for (auto& e : edgeList) {
+        int u = e.first;
+        int v = e.second;
+        if (u >= 0 && u < N && v >= 0 && v < N) {
+            adj[u].push_back(v);
+            adj[v].push_back(u);
+        }
+    }
+
+    int bestDist = -1;
+    vector<int> bestPath;
+    // BFS helper
+    vector<bool> vis;
+    vector<int> parent;
+    queue<int> q;
+
+    for (int start = 0; start < N; start++) {
+        vis.assign(N, false);
+        parent.assign(N, -1);
+        q = queue<int>();
+
+        vis[start] = true;
+        q.push(start);
+
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop();
+
+            for (int v : adj[u]) {
+                if (!vis[v]) {
+                    vis[v] = true;
+                    parent[v] = u;
+                    q.push(v);
+                }
+            }
+        }
+
+        // after BFS from start, find farthest node
+        for (int end = 0; end < N; end++) {
+            if (end == start || parent[end] == -1) continue;
+            // compute distance by following parent
+            int dist = 0;
+            int cur = end;
+            vector<int> path;
+            while (cur != -1) {
+                path.push_back(cur);
+                cur = parent[cur];
+                dist++;
+            }
+            if (dist > bestDist) {
+                bestDist = dist;
+                bestPath = path;          // currently reversed: end->...->start
+                reverse(bestPath.begin(), bestPath.end()); // make start->...->end
+            }
+        }
+    }
+
+    // bestDist includes count of nodes; diameter length as edges = bestDist - 1
+    return json{
+        {"diameter", bestDist > 0 ? bestDist - 1 : 0},
+        {"path", bestPath}
+    };
+}
+
+// Compute Girth (shortest cycle)
+json computeGirth(int N, const vector<pair<int,int>>& edgeList) {
+    adj.assign(N, vector<int>());
+    for (auto& e : edgeList) {
+        int u = e.first;
+        int v = e.second;
+        if (u >= 0 && u < N && v >= 0 && v < N) {
+            adj[u].push_back(v);
+            adj[v].push_back(u);
+        }
+    }
+
+    int minGirth = INT_MAX;
+    vector<int> girthCycle;
+
+    for (int start = 0; start < N; start++) {
+        vector<int> dist(N, -1);
+        vector<int> parent(N, -1);
+        queue<int> q;
+
+        dist[start] = 0;
+        q.push(start);
+
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop();
+
+            for (int v : adj[u]) {
+                if (dist[v] == -1) {
+                    // Node not visited
+                    dist[v] = dist[u] + 1;
+                    parent[v] = u;
+                    q.push(v);
+                } else if (parent[u] != v) {
+                    // Cycle detected
+                    int cycleLen = dist[u] + dist[v] + 1;
+                    if (cycleLen < minGirth) {
+                        minGirth = cycleLen;
+                        // Reconstruct cycle path
+                        girthCycle.clear();
+                        int cur = u;
+                        while (cur != -1) {
+                            girthCycle.push_back(cur);
+                            cur = parent[cur];
+                        }
+                        vector<int> pathV;
+                        cur = v;
+                        while (cur != -1) {
+                            pathV.push_back(cur);
+                            cur = parent[cur];
+                        }
+                        // Find common ancestor and build cycle
+                        set<int> ancestorsU(girthCycle.begin(), girthCycle.end());
+                        vector<int> finalCycle;
+                        cur = v;
+                        while (ancestorsU.find(cur) == ancestorsU.end()) {
+                            finalCycle.push_back(cur);
+                            cur = parent[cur];
+                        }
+                        finalCycle.push_back(cur); // common ancestor
+                        reverse(finalCycle.begin(), finalCycle.end());
+                        for (int node : girthCycle) {
+                            if (node == cur) break;
+                            finalCycle.push_back(node);
+                        }
+                        girthCycle = finalCycle;
+                    }
+                }
+            }
+        }
+    }
+
+    return json{
+        {"girth", minGirth == INT_MAX ? -1 : minGirth},
+        {"cycle", girthCycle}
+    };
+}
+
 // ========== Main: Read JSON from stdin, dispatch, write JSON to stdout ==========
 
 int main() {
@@ -444,6 +703,56 @@ int main() {
                     {"largestIndex", compResult["largestIndex"]},
                     {"largestSize", compResult["largestSize"]},
                     {"largestNodes", compResult["largestNodes"]}
+                };
+            }
+
+        // ===== TUGAS 3: check bipartite, cycle, diameter & girth =====
+        } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth") {
+
+            int N = input.at("numVertices").get<int>();
+            if (N < 0 || N > 500) {
+                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+                return 0;
+            }
+
+            vector<pair<int,int>> edgeList;
+            if (input.contains("edges")) {
+                for (auto& e : input["edges"]) {
+                    int u = e[0].get<int>();
+                    int v = e[1].get<int>();
+                    if (u == v) continue;
+                    edgeList.push_back({u, v});
+                }
+            }
+
+            if (operation == "check_bipartite") {
+                json bipartiteResult = checkBipartite(N, edgeList);
+                result = json{
+                    {"success", true},
+                    {"isBipartite", bipartiteResult["isBipartite"]},
+                    {"partitionA", bipartiteResult["partitionA"]},
+                    {"partitionB", bipartiteResult["partitionB"]}
+                };
+            } else if (operation == "check_cycle") {
+                json cycleResult = checkCycle(N, edgeList);
+                result = json{
+                    {"success", true},
+                    {"hasCycle", cycleResult["hasCycle"]},
+                    {"cyclePath", cycleResult["cyclePath"]}
+                };
+            } else if (operation == "diameter") {
+                json dres = computeDiameter(N, edgeList);
+                result = json{
+                    {"success", true},
+                    {"diameter", dres["diameter"]},
+                    {"path", dres["path"]}
+                };
+            } else if (operation == "girth") {
+                json gres = computeGirth(N, edgeList);
+                result = json{
+                    {"success", true},
+                    {"girth", gres["girth"]},
+                    {"cycle", gres["cycle"]}
                 };
             }
 

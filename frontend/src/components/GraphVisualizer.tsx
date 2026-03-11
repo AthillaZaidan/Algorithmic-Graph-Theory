@@ -13,6 +13,10 @@ interface GraphVisualizerProps {
   highlightNodes?: number[];
   highlightEdges?: number[][];
   componentColors?: Map<number, string>;
+  bipartiteColors?: Map<number, string>;
+  cyclePathNodes?: number[];
+  diameterPathNodes?: number[];
+  girthCycleNodes?: number[];
 }
 
 export default function GraphVisualizer({
@@ -21,6 +25,10 @@ export default function GraphVisualizer({
   highlightNodes = [],
   highlightEdges = [],
   componentColors,
+  bipartiteColors,
+  cyclePathNodes = [],
+  diameterPathNodes = [],
+  girthCycleNodes = [],
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
@@ -58,6 +66,28 @@ export default function GraphVisualizer({
     }
     return s;
   }, [highlightEdges]);
+
+  const diameterEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (let i = 0; i < diameterPathNodes.length - 1; i++) {
+      const u = diameterPathNodes[i];
+      const v = diameterPathNodes[i + 1];
+      s.add(`${u}-${v}`);
+      s.add(`${v}-${u}`);
+    }
+    return s;
+  }, [diameterPathNodes]);
+
+  const girthEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (let i = 0; i < girthCycleNodes.length; i++) {
+      const u = girthCycleNodes[i];
+      const v = girthCycleNodes[(i + 1) % girthCycleNodes.length];
+      s.add(`${u}-${v}`);
+      s.add(`${v}-${u}`);
+    }
+    return s;
+  }, [girthCycleNodes]);
 
   // Incrementally update nodes to keep existing positions stable
   const graphData = useMemo(() => {
@@ -99,16 +129,27 @@ export default function GraphVisualizer({
             const y = node.y ?? 0;
             const isHighlighted = highlightNodeSet.has(id);
             const hasCompColor = componentColors && componentColors.has(id);
-            const baseColor = hasCompColor
-              ? componentColors!.get(id)!
-              : isHighlighted
-                ? "#22d3ee"
-                : "rgba(255,255,255,0.6)";
+            const hasBipartiteColor = bipartiteColors && bipartiteColors.has(id);
+            const isCyclePath = cyclePathNodes.includes(id);
+            const isGirthNode = girthCycleNodes.includes(id);
 
-            const radius = isHighlighted ? 10 : 7;
+            let baseColor: string;
+            if (hasBipartiteColor) {
+              baseColor = bipartiteColors!.get(id)!;
+            } else if (hasCompColor) {
+              baseColor = componentColors!.get(id)!;
+            } else if (isGirthNode) {
+              baseColor = "#ec4899"; // pink for girth
+            } else if (isHighlighted) {
+              baseColor = "#22d3ee";
+            } else {
+              baseColor = "rgba(255,255,255,0.6)";
+            }
+
+            const radius = isHighlighted || isCyclePath || isGirthNode ? 10 : 7;
 
             // Glow effect for highlighted nodes
-            if (isHighlighted || hasCompColor) {
+            if (isHighlighted || hasCompColor || hasBipartiteColor || isCyclePath || isGirthNode) {
               ctx.beginPath();
               ctx.arc(x, y, radius + 6, 0, 2 * Math.PI);
               ctx.fillStyle = baseColor + "30";
@@ -120,15 +161,15 @@ export default function GraphVisualizer({
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
             ctx.fillStyle = baseColor;
             ctx.fill();
-            ctx.strokeStyle = "rgba(255,255,255,0.4)";
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = isCyclePath ? "rgba(251,191,36,0.8)" : "rgba(255,255,255,0.4)";
+            ctx.lineWidth = isCyclePath ? 3 : 1.5;
             ctx.stroke();
 
             // Bold label
-            ctx.font = `bold ${isHighlighted ? "7px" : "6px"} sans-serif`;
+            ctx.font = `bold ${isHighlighted || isCyclePath ? "7px" : "6px"} sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = isHighlighted || hasCompColor ? "#ffffff" : "rgba(255,255,255,0.95)";
+            ctx.fillStyle = isHighlighted || hasCompColor || hasBipartiteColor ? "#ffffff" : "rgba(255,255,255,0.95)";
             ctx.fillText(`${id}`, x, y);
           }}
           linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D) => {
@@ -139,13 +180,35 @@ export default function GraphVisualizer({
             const sourceId = src.id ?? 0;
             const targetId = tgt.id ?? 0;
             const key = `${sourceId}-${targetId}`;
+            const isDia = diameterEdgeSet.has(key);
+            const isGirth = girthEdgeSet.has(key);
             const isHL = highlightEdgeSet.has(key);
 
             ctx.beginPath();
             ctx.moveTo(src.x, src.y!);
             ctx.lineTo(tgt.x, tgt.y!);
 
-            if (isHL) {
+            if (isGirth) {
+              // girth cycle edge appears pink
+              ctx.strokeStyle = "rgba(236,72,153,0.15)";
+              ctx.lineWidth = 6;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y!);
+              ctx.lineTo(tgt.x, tgt.y!);
+              ctx.strokeStyle = "#ec4899"; // pink
+              ctx.lineWidth = 3;
+            } else if (isDia) {
+              // diameter path appears green
+              ctx.strokeStyle = "rgba(34,211,238,0.15)"; // light glow
+              ctx.lineWidth = 6;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y!);
+              ctx.lineTo(tgt.x, tgt.y!);
+              ctx.strokeStyle = "#4ade80"; // green
+              ctx.lineWidth = 3;
+            } else if (isHL) {
               // Glow for highlighted edges
               ctx.strokeStyle = "rgba(34,211,238,0.25)";
               ctx.lineWidth = 6;
