@@ -13,12 +13,16 @@ type Operation =
   | "check_connectivity"
   | "count_components"
   | "largest_component"
-  | "count_islands";
+  | "count_islands"
+  | "check_bipartite"
+  | "check_cycle"
+  | "diameter"
+  | "girth";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2";
+  group: "tugas1" | "tugas2" | "tugas3";
   description: string;
 }
 
@@ -30,6 +34,10 @@ const TABS: TabDef[] = [
   { id: "count_components", label: "Components", group: "tugas2", description: "Hitung jumlah komponen terhubung dalam graf" },
   { id: "largest_component", label: "Largest", group: "tugas2", description: "Cari komponen terhubung terbesar" },
   { id: "count_islands", label: "Islands", group: "tugas2", description: "Hitung jumlah pulau pada grid" },
+  { id: "check_bipartite", label: "Bipartite", group: "tugas3", description: "Cek apakah graf adalah bipartite dengan 2 partisi" },
+  { id: "check_cycle", label: "Cycle", group: "tugas3", description: "Cek apakah graf memiliki cycle/siklus" },
+  { id: "diameter", label: "Diameter", group: "tugas3", description: "Hitung diameter graf dan jalur terpanjang" },
+  { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf" },
 ];
 
 const COMPONENT_COLORS = [
@@ -57,6 +65,12 @@ export default function Home() {
   const [componentColors, setComponentColors] = useState<Map<number, string>>(new Map());
   const [islandLabels, setIslandLabels] = useState<number[][] | undefined>();
   const [islandCount, setIslandCount] = useState<number | undefined>();
+  const [bipartiteColors, setBipartiteColors] = useState<Map<number, string>>(new Map());
+  const [cyclePathNodes, setCyclePathNodes] = useState<number[]>([]);
+  const [diameterPath, setDiameterPath] = useState<number[]>([]);
+  const [diameterLength, setDiameterLength] = useState<number | undefined>();
+  const [girthValue, setGirthValue] = useState<number | undefined>();
+  const [girthCycle, setGirthCycle] = useState<number[]>([]);
 
   const animationRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -79,6 +93,12 @@ export default function Home() {
     setComponentColors(new Map());
     setIslandLabels(undefined);
     setIslandCount(undefined);
+    setBipartiteColors(new Map());
+    setCyclePathNodes([]);
+    setDiameterPath([]);
+    setDiameterLength(undefined);
+    setGirthValue(undefined);
+    setGirthCycle([]);
     clearAnimations();
 
     const body: Record<string, unknown> = { operation: activeTab };
@@ -155,6 +175,55 @@ export default function Home() {
       } else if (activeTab === "count_islands") {
         setIslandLabels(data.labels as number[][]);
         setIslandCount(data.count as number);
+      } else if (activeTab === "check_bipartite") {
+        const bipartiteColorMap = new Map<number, string>();
+        const partA = (data.partitionA as number[]) || [];
+        const partB = (data.partitionB as number[]) || [];
+        
+        partA.forEach((node: number) => bipartiteColorMap.set(node, "#06b6d4")); // cyan
+        partB.forEach((node: number) => bipartiteColorMap.set(node, "#a78bfa")); // violet
+        
+        setBipartiteColors(bipartiteColorMap);
+        setHighlightNodes(Array.from({ length: numVertices }, (_, i) => i));
+      } else if (activeTab === "check_cycle") {
+        if (data.hasCycle && data.cyclePath) {
+          const cycle = data.cyclePath as number[];
+          setCyclePathNodes(cycle);
+          setHighlightNodes(cycle);
+          
+          // Highlight edges in the cycle
+          const cycleEdges: number[][] = [];
+          for (let i = 0; i < cycle.length; i++) {
+            const nextIdx = (i + 1) % cycle.length;
+            cycleEdges.push([cycle[i], cycle[nextIdx]]);
+          }
+          setHighlightEdges(cycleEdges);
+        }
+      } else if (activeTab === "diameter") {
+        if (data.path) {
+          const path = data.path as number[];
+          setDiameterPath(path);
+          setHighlightNodes(path);
+          const diaEdges: number[][] = [];
+          for (let i = 0; i < path.length - 1; i++) {
+            diaEdges.push([path[i], path[i + 1]]);
+          }
+          setHighlightEdges(diaEdges);
+          setDiameterLength(data.diameter as number);
+        }
+      } else if (activeTab === "girth") {
+        if (data.girth && data.girth > 0 && data.cycle) {
+          const cycle = data.cycle as number[];
+          setGirthValue(data.girth as number);
+          setGirthCycle(cycle);
+          setHighlightNodes(cycle);
+          const girthEdges: number[][] = [];
+          for (let i = 0; i < cycle.length; i++) {
+            const nextIdx = (i + 1) % cycle.length;
+            girthEdges.push([cycle[i], cycle[nextIdx]]);
+          }
+          setHighlightEdges(girthEdges);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to call API");
@@ -314,6 +383,177 @@ export default function Home() {
             </p>
           </div>
         );
+
+      case "check_bipartite":
+        return (
+          <div className="space-y-3">
+            <div className={`flex items-center gap-2 text-lg font-semibold ${result.isBipartite ? "text-emerald-400" : "text-amber-400"}`}>
+              {result.isBipartite ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Graf BIPARTITE ✓</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span>Bukan Graf Bipartite</span>
+                </>
+              )}
+            </div>
+
+            {result.isBipartite && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="glass p-3 border border-cyan-400/30">
+                    <p className="text-cyan-300 font-semibold text-sm mb-2">Partisi A</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((result.partitionA as number[]) || []).map((node: number) => (
+                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-400/20 border border-cyan-400/40 text-cyan-300 text-sm font-mono font-semibold">
+                          {node}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="glass p-3 border border-violet-400/30">
+                    <p className="text-violet-300 font-semibold text-sm mb-2">Partisi B</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((result.partitionB as number[]) || []).map((node: number) => (
+                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-400/20 border border-violet-400/40 text-violet-300 text-sm font-mono font-semibold">
+                          {node}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-white/40 text-xs">
+                  Semua edge hanya terhubung antara Partisi A dan Partisi B (tidak ada edge dalam partisi yang sama)
+                </p>
+              </div>
+            )}
+          </div>
+        );
+
+      case "check_cycle":
+        return (
+          <div className="space-y-3">
+            <div className={`flex items-center gap-2 text-lg font-semibold ${result.hasCycle ? "text-amber-400" : "text-emerald-400"}`}>
+              {result.hasCycle ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Graf Memiliki CYCLE</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Graf Tidak Memiliki Cycle</span>
+                </>
+              )}
+            </div>
+
+            {result.hasCycle && result.cyclePath && (
+              <div className="glass p-4 border-amber-400/30">
+                <p className="text-amber-300 font-semibold text-sm mb-2">Cycle Path:</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {((result.cyclePath as number[]) || []).map((node: number, i: number) => (
+                    <span key={i} className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-amber-400/20 border border-amber-400/40 text-amber-300 text-sm font-mono font-semibold">
+                        {node}
+                      </span>
+                      {i < ((result.cyclePath as number[]) || []).length - 1 && (
+                        <span className="text-amber-400/60">→</span>
+                      )}
+                    </span>
+                  ))}
+                  {(result.cyclePath as number[])?.length > 0 && (
+                    <span className="text-amber-400/60">↻</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case "diameter":
+        return (
+          <div className="space-y-3">
+            <p className="text-white/60 text-xs uppercase tracking-wide">
+              Diameter graf: <span className="text-green-300 font-bold text-lg">{diameterLength ?? 0}</span>
+            </p>
+            {diameterPath.length > 0 && (
+              <>
+                <p className="text-white/40 text-xs">
+                  Jalur mulai dari <span className="font-mono font-semibold">{diameterPath[0]}</span> ke <span className="font-mono font-semibold">{diameterPath[diameterPath.length - 1]}</span>
+                </p>
+                <div className="glass p-4 border-green-400/30">
+                  <p className="text-green-300 font-semibold text-sm mb-2">Path terpanjang:</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {diameterPath.map((node: number, i: number) => (
+                      <span key={i} className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-green-400/20 border border-green-400/40 text-green-300 text-sm font-mono font-semibold">
+                          {node}
+                        </span>
+                        {i < diameterPath.length - 1 && (
+                          <span className="text-green-400/60">→</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        );
+
+      case "girth":
+        return (
+          <div className="space-y-3">
+            {girthValue && girthValue > 0 ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-white/60 text-xs uppercase tracking-wide">Girth (cycle terpendek):</span>
+                  <span className="text-pink-300 font-bold text-lg">{girthValue}</span>
+                </div>
+                {girthCycle.length > 0 && (
+                  <div className="glass p-4 border-pink-400/30">
+                    <p className="text-pink-300 font-semibold text-sm mb-2">Cycle:</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {girthCycle.map((node: number, i: number) => (
+                        <span key={i} className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-pink-400/20 border border-pink-400/40 text-pink-300 text-sm font-mono font-semibold">
+                            {node}
+                          </span>
+                          {i < girthCycle.length - 1 && (
+                            <span className="text-pink-400/60">→</span>
+                          )}
+                        </span>
+                      ))}
+                      {girthCycle.length > 0 && (
+                        <span className="text-pink-400/60">↻</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-cyan-400">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="font-semibold">Graf tidak memiliki cycle</span>
+              </div>
+            )}
+          </div>
+        );
+
     }
   };
 
@@ -348,6 +588,8 @@ export default function Home() {
                     setComponentColors(new Map());
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -378,11 +620,53 @@ export default function Home() {
                     setComponentColors(new Map());
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     activeTab === tab.id
                       ? "bg-teal-400/15 border border-teal-400/40 text-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.12)]"
+                      : "glass-btn text-white/60 hover:text-white/90"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tugas 3 */}
+          <div className="flex-1">
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 3 — Advanced Checks</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TABS.filter((t) => t.group === "tugas3").map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setResult(null);
+                    setError("");
+                    setHighlightNodes([]);
+                    setHighlightEdges([]);
+                    setComponentColors(new Map());
+                    setIslandLabels(undefined);
+                    setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
+                    setDiameterPath([]);
+                    setDiameterLength(undefined);
+                    setGirthValue(undefined);
+                    setGirthCycle([]);
+                    clearAnimations();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? tab.id === "diameter"
+                        ? "bg-green-400/15 border border-green-400/40 text-green-300 shadow-[0_0_12px_rgba(74,222,128,0.12)]"
+                        : tab.id === "girth"
+                        ? "bg-pink-400/15 border border-pink-400/40 text-pink-300 shadow-[0_0_12px_rgba(236,72,153,0.12)]"
+                        : "bg-violet-400/15 border border-violet-400/40 text-violet-300 shadow-[0_0_12px_rgba(167,139,250,0.12)]"
                       : "glass-btn text-white/60 hover:text-white/90"
                   }`}
                 >
@@ -488,6 +772,10 @@ export default function Home() {
               highlightNodes={highlightNodes}
               highlightEdges={highlightEdges}
               componentColors={componentColors.size > 0 ? componentColors : undefined}
+              bipartiteColors={bipartiteColors.size > 0 ? bipartiteColors : undefined}
+              cyclePathNodes={cyclePathNodes}
+              diameterPathNodes={diameterPath}
+              girthCycleNodes={girthCycle}
             />
           )}
 

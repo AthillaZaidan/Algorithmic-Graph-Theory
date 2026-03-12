@@ -26,6 +26,15 @@ export interface GraphResponse {
   largestSize?: number;
   largestNodes?: number[];
   labels?: number[][];
+  isBipartite?: boolean;
+  partitionA?: number[];
+  partitionB?: number[];
+  hasCycle?: boolean;
+  cyclePath?: number[];
+  diameter?: number;
+  path?: number[];
+  girth?: number;
+  cycle?: number[];
 }
 
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {
