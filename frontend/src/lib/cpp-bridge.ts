@@ -18,7 +18,7 @@ export interface GraphResponse {
   found?: boolean;
   path?: number[];
   connected?: boolean;
-  reachable?: number;
+  reachable?: boolean;
   total?: number;
   count?: number;
   components?: number[][];
@@ -32,9 +32,11 @@ export interface GraphResponse {
   hasCycle?: boolean;
   cyclePath?: number[];
   diameter?: number;
-  path?: number[];
   girth?: number;
   cycle?: number[];
+  distance?: number;
+  mstEdges?: number[][];
+  totalWeight?: number;
 }
 
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {
