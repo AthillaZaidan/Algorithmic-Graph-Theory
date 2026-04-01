@@ -599,6 +599,54 @@ json computeGirth(int N, const vector<pair<int,int>>& edgeList) {
     };
 }
 
+// ========== TUGAS 4 ==========
+
+// Dijkstra Shortest Path (weighted, undirected)
+json shortestPath(int N, const vector<tuple<int,int,int>>& weightedEdges, int src, int dst) {
+    if (src < 0 || src >= N || dst < 0 || dst >= N) {
+        return json{{"reachable", false}, {"distance", -1}, {"path", json::array()}};
+    }
+
+    vector<vector<pair<int,int>>> adjW(N);
+    for (const auto& e : weightedEdges) {
+        int u = get<0>(e), v = get<1>(e), w = get<2>(e);
+        adjW[u].push_back({v, w});
+        adjW[v].push_back({u, w});
+    }
+
+    vector<int> dist(N, INT_MAX);
+    vector<int> parent(N, -1);
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;
+
+    dist[src] = 0;
+    pq.push({0, src});
+
+    while (!pq.empty()) {
+        auto [d, u] = pq.top();
+        pq.pop();
+        if (d > dist[u]) continue;
+        for (auto [v, w] : adjW[u]) {
+            if (dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+                parent[v] = u;
+                pq.push({dist[v], v});
+            }
+        }
+    }
+
+    if (dist[dst] == INT_MAX) {
+        return json{{"reachable", false}, {"distance", -1}, {"path", json::array()}};
+    }
+
+    vector<int> path;
+    for (int cur = dst; cur != -1; cur = parent[cur]) {
+        path.push_back(cur);
+    }
+    reverse(path.begin(), path.end());
+
+    return json{{"reachable", true}, {"distance", dist[dst]}, {"path", path}};
+}
+
 // ========== Main: Read JSON from stdin, dispatch, write JSON to stdout ==========
 
 int main() {
@@ -770,6 +818,38 @@ int main() {
                 {"success", true},
                 {"count", islandResult["count"]},
                 {"labels", islandResult["labels"]}
+            };
+
+        } else if (operation == "shortest_path") {
+            int N = input.at("numVertices").get<int>();
+            if (N < 0 || N > 500) {
+                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+                return 0;
+            }
+            int a = input.at("nodeA").get<int>();
+            int b = input.at("nodeB").get<int>();
+            if (a < 0 || a >= N || b < 0 || b >= N) {
+                cout << json{{"success", false}, {"error", "nodeA atau nodeB diluar index"}}.dump() << endl;
+                return 0;
+            }
+
+            vector<tuple<int,int,int>> weightedEdges;
+            if (input.contains("edges")) {
+                for (auto& e : input["edges"]) {
+                    int u = e[0].get<int>();
+                    int v = e[1].get<int>();
+                    int w = e.size() >= 3 ? e[2].get<int>() : 1;
+                    if (u == v) continue;
+                    weightedEdges.push_back({u, v, w});
+                }
+            }
+
+            json spResult = shortestPath(N, weightedEdges, a, b);
+            result = json{
+                {"success", true},
+                {"reachable", spResult["reachable"]},
+                {"distance", spResult["distance"]},
+                {"path", spResult["path"]}
             };
 
         } else {
