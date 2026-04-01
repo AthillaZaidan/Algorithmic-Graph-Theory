@@ -874,8 +874,8 @@ int main() {
 
         } else if (operation == "shortest_path") {
             int N = input.at("numVertices").get<int>();
-            if (N < 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+            if (N <= 0 || N > 500) {
+                cout << json{{"success", false}, {"error", "numVertices harus 1-500"}}.dump() << endl;
                 return 0;
             }
             int a = input.at("nodeA").get<int>();
@@ -907,8 +907,8 @@ int main() {
 
         } else if (operation == "min_spanning_tree") {
             int N = input.at("numVertices").get<int>();
-            if (N < 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+            if (N <= 0 || N > 500) {
+                cout << json{{"success", false}, {"error", "numVertices harus 1-500"}}.dump() << endl;
                 return 0;
             }
 
