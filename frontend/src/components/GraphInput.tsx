@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import FileUpload from "@/components/FileUpload";
 
 interface GraphInputProps {
   onGraphChange: (numVertices: number, edges: number[][]) => void;
+  onFileLoaded?: (numVertices: number, edges: number[][], isWeighted: boolean) => void;
   maxNodes?: number;
 }
 
-export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputProps) {
+export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 20 }: GraphInputProps) {
   const [numVertices, setNumVertices] = useState(5);
   const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
 
@@ -15,6 +17,8 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
   const [edgeSrc, setEdgeSrc] = useState("");
   const [edgeDest, setEdgeDest] = useState("");
   const [error, setError] = useState("");
+  const [edgeWeight, setEdgeWeight] = useState("");
+  const [isWeighted, setIsWeighted] = useState(false);
 
   const emitChange = useCallback(
     (nv: number, e: number[][]) => {
@@ -75,16 +79,18 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
       setError("Self-loop tidak diperbolehkan");
       return;
     }
-    // Check duplicate
     if (edges.some(([a, b]) => (a === u && b === v) || (a === v && b === u))) {
       setError(`Edge ${u}-${v} sudah ada`);
       return;
     }
     setError("");
-    const newEdges = [...edges, [u, v]];
+    const w = edgeWeight !== "" ? parseInt(edgeWeight) : undefined;
+    const newEdge = (w !== undefined && !isNaN(w) && w >= 0) ? [u, v, w] : [u, v];
+    const newEdges = [...edges, newEdge];
     setEdges(newEdges);
     setEdgeSrc("");
     setEdgeDest("");
+    setEdgeWeight("");
     emitChange(numVertices, newEdges);
   };
 
@@ -194,7 +200,20 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
 
       {/* Add Edge */}
       <div>
-        <label className="block text-xs text-white/50 uppercase tracking-wider mb-2">Add Edge</label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-white/50 uppercase tracking-wider">Add Edge</label>
+          <button
+            type="button"
+            onClick={() => setIsWeighted((v) => !v)}
+            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+              isWeighted
+                ? "border-amber-400/40 text-amber-400 bg-amber-400/10"
+                : "border-white/10 text-white/30 hover:text-white/50"
+            }`}
+          >
+            {isWeighted ? "Weighted ✓" : "Unweighted"}
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -217,6 +236,17 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
             placeholder="v"
             className="glass-input w-16 text-center font-mono"
           />
+          {isWeighted && (
+            <input
+              type="number"
+              min={0}
+              value={edgeWeight}
+              onChange={(e) => setEdgeWeight(e.target.value)}
+              onKeyDown={handleEdgeKeyDown}
+              placeholder="w"
+              className="glass-input w-16 text-center font-mono"
+            />
+          )}
           <button
             onClick={addEdge}
             className="glass-btn px-4 py-2 rounded-lg text-cyan-400 text-sm font-semibold hover:bg-cyan-400/15 flex items-center gap-1"
@@ -252,17 +282,20 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
           {edges.length === 0 ? (
             <p className="text-white/20 text-xs italic py-2">Belum ada edge. Tambahkan dengan form di atas.</p>
           ) : (
-            edges.map(([u, v], idx) => (
+            edges.map((e, idx) => (
               <div key={idx} className="flex items-center justify-between py-1 px-2 rounded-md bg-white/[0.03] hover:bg-white/[0.06] group transition-colors">
                 <span className="text-sm font-mono text-white/70">
-                  <span className="text-cyan-400/80">{u}</span>
+                  <span className="text-cyan-400/80">{e[0]}</span>
                   <span className="text-white/30 mx-2">↔</span>
-                  <span className="text-teal-400/80">{v}</span>
+                  <span className="text-teal-400/80">{e[1]}</span>
+                  {e[2] !== undefined && (
+                    <span className="text-amber-400/60 ml-2 text-xs">(w={e[2]})</span>
+                  )}
                 </span>
                 <button
                   onClick={() => removeEdge(idx)}
                   className="text-red-400/0 group-hover:text-red-400/70 hover:!text-red-400 transition-all text-xs"
-                  title={`Delete edge ${u}-${v}`}
+                  title={`Delete edge ${e[0]}-${e[1]}`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -280,6 +313,21 @@ export default function GraphInput({ onGraphChange, maxNodes = 20 }: GraphInputP
           {error}
         </div>
       )}
+
+      {/* File Upload */}
+      <div className="pt-2 border-t border-white/[0.06]">
+        <FileUpload
+          onGraphLoaded={(parsed) => {
+            const clamped = Math.min(parsed.numVertices, maxNodes);
+            const safeEdges = parsed.edges.filter(([u, v]) => u < clamped && v < clamped);
+            setNumVertices(clamped);
+            setEdges(safeEdges);
+            setIsWeighted(parsed.isWeighted);
+            emitChange(clamped, safeEdges);
+            onFileLoaded?.(clamped, safeEdges, parsed.isWeighted);
+          }}
+        />
+      </div>
 
       {/* Stats */}
       <div className="flex gap-3 text-xs text-white/40 pt-1 border-t border-white/[0.06]">

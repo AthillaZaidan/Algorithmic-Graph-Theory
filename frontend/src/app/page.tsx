@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
+import { GraphResponse } from "@/lib/cpp-bridge";
 
 type Operation =
   | "dfs"
@@ -17,12 +19,14 @@ type Operation =
   | "check_bipartite"
   | "check_cycle"
   | "diameter"
-  | "girth";
+  | "girth"
+  | "shortest_path"
+  | "min_spanning_tree";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4";
   description: string;
 }
 
@@ -38,6 +42,8 @@ const TABS: TabDef[] = [
   { id: "check_cycle", label: "Cycle", group: "tugas3", description: "Cek apakah graf memiliki cycle/siklus" },
   { id: "diameter", label: "Diameter", group: "tugas3", description: "Hitung diameter graf dan jalur terpanjang" },
   { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf" },
+  { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)" },
+  { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
 ];
 
 const COMPONENT_COLORS = [
@@ -56,7 +62,7 @@ export default function Home() {
   const [grid, setGrid] = useState<string[]>(Array.from({ length: 5 }, () => "....."));
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<GraphResponse | null>(null);
   const [error, setError] = useState("");
 
   // Visualization state
@@ -71,6 +77,9 @@ export default function Home() {
   const [diameterLength, setDiameterLength] = useState<number | undefined>();
   const [girthValue, setGirthValue] = useState<number | undefined>();
   const [girthCycle, setGirthCycle] = useState<number[]>([]);
+  const [mstEdges, setMstEdges] = useState<number[][]>([]);
+  const [mstTotalWeight, setMstTotalWeight] = useState<number | undefined>();
+  const [isWeightedMode, setIsWeightedMode] = useState(false);
 
   const animationRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -82,6 +91,12 @@ export default function Home() {
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
     setNumVertices(nv);
     setEdges(e);
+  }, []);
+
+  const handleFileLoaded = useCallback((nv: number, e: number[][], weighted: boolean) => {
+    setNumVertices(nv);
+    setEdges(e);
+    setIsWeightedMode(weighted);
   }, []);
 
   const runOperation = async () => {
@@ -99,6 +114,8 @@ export default function Home() {
     setDiameterLength(undefined);
     setGirthValue(undefined);
     setGirthCycle([]);
+    setMstEdges([]);
+    setMstTotalWeight(undefined);
     clearAnimations();
 
     const body: Record<string, unknown> = { operation: activeTab };
@@ -110,7 +127,7 @@ export default function Home() {
 
     if (activeTab === "dfs" || activeTab === "bfs") {
       body.startNode = startNode;
-    } else if (activeTab === "check_path") {
+    } else if (activeTab === "check_path" || activeTab === "shortest_path") {
       body.nodeA = nodeA;
       body.nodeB = nodeB;
     } else if (activeTab === "count_islands") {
@@ -224,6 +241,26 @@ export default function Home() {
           }
           setHighlightEdges(girthEdges);
         }
+      } else if (activeTab === "shortest_path") {
+        if (data.reachable && data.path) {
+          const p = data.path as number[];
+          setHighlightNodes(p);
+          const pathEdges: number[][] = [];
+          for (let i = 0; i < p.length - 1; i++) {
+            pathEdges.push([p[i], p[i + 1]]);
+          }
+          setHighlightEdges(pathEdges);
+        }
+      } else if (activeTab === "min_spanning_tree") {
+        if (data.mstEdges) {
+          const mst = data.mstEdges as number[][];
+          setMstEdges(mst);
+          setMstTotalWeight(data.totalWeight as number);
+          const mstNodes = new Set<number>();
+          mst.forEach(([u, v]) => { mstNodes.add(u); mstNodes.add(v); });
+          setHighlightNodes(Array.from(mstNodes));
+          setHighlightEdges(mst.map(([u, v]) => [u, v]));
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to call API");
@@ -234,7 +271,7 @@ export default function Home() {
 
   const isGraphOp = activeTab !== "count_islands";
   const needsStart = activeTab === "dfs" || activeTab === "bfs";
-  const needsAB = activeTab === "check_path";
+  const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
 
   const renderResult = () => {
     if (error) {
@@ -256,9 +293,15 @@ export default function Home() {
             <p className="text-white/60 text-xs uppercase tracking-wide">Traversal Order</p>
             <div className="flex flex-wrap gap-1.5">
               {((result.traversal as number[]) || []).map((node: number, i: number) => (
-                <span key={i} className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 text-sm font-mono font-semibold">
+                <motion.span
+                  key={i}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: i * 0.05, type: "spring", stiffness: 300 }}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 text-sm font-mono font-semibold"
+                >
                   {node}
-                </span>
+                </motion.span>
               ))}
             </div>
             <p className="text-white/40 text-xs mt-2">
@@ -311,9 +354,11 @@ export default function Home() {
                 {result.connected ? "Graf TERHUBUNG" : "Graf TIDAK TERHUBUNG"}
               </span>
             </div>
-            <p className="text-white/50 text-sm">
-              {result.reachable as number} dari {result.total as number} node terjangkau dari node 0
-            </p>
+            {result.reachable && (
+              <p className="text-white/50 text-sm">
+                Total {result.total as number} node dalam graf
+              </p>
+            )}
           </div>
         );
 
@@ -554,6 +599,75 @@ export default function Home() {
           </div>
         );
 
+      case "shortest_path":
+        return (
+          <div className="space-y-2">
+            {result.reachable ? (
+              <>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="font-semibold">Path ditemukan!</span>
+                </div>
+                <p className="text-white/60 text-xs">
+                  Jarak terpendek: <span className="text-amber-400 font-mono font-bold">{result.distance as number}</span>
+                </p>
+                <div className="flex flex-wrap items-center gap-1">
+                  {((result.path as number[]) || []).map((node: number, i: number) => (
+                    <span key={i} className="flex items-center gap-1">
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 text-sm font-mono">
+                        {node}
+                      </span>
+                      {i < ((result.path as number[]) || []).length - 1 && (
+                        <span className="text-white/30">→</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-red-400">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="font-semibold">Tidak ada jalur dari {nodeA} ke {nodeB}</span>
+              </div>
+            )}
+          </div>
+        );
+
+      case "min_spanning_tree":
+        return (
+          <div className="space-y-2">
+            <div className={`flex items-center gap-2 ${result.connected ? "text-emerald-400" : "text-amber-400"}`}>
+              <span className="font-semibold">{result.connected ? "MST berhasil dibuat" : "Graf tidak terhubung — Forest MST"}</span>
+            </div>
+            <p className="text-white/60 text-xs">
+              Total bobot: <span className="text-amber-400 font-mono font-bold">{result.totalWeight as number}</span>
+            </p>
+            <p className="text-white/50 text-xs uppercase tracking-wide mt-2">Edge MST ({(result.mstEdges as number[][])?.length || 0})</p>
+            <div className="space-y-1 max-h-36 overflow-y-auto">
+              {((result.mstEdges as number[][]) || []).map(([u, v, w], i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.04, duration: 0.2 }}
+                  className="flex items-center gap-2 text-xs font-mono bg-white/[0.03] rounded px-2 py-1"
+                >
+                  <span className="text-cyan-400">{u}</span>
+                  <span className="text-white/30">↔</span>
+                  <span className="text-teal-400">{v}</span>
+                  {w !== undefined && (
+                    <span className="text-amber-400/70 ml-auto">w={w}</span>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        );
+
     }
   };
 
@@ -573,7 +687,12 @@ export default function Home() {
       <div className="glass p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Tugas 1 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 1 — Traversal &amp; Analysis</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas1").map((tab) => (
@@ -602,10 +721,15 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Tugas 2 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.08 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 2 — Components &amp; Islands</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas2").map((tab) => (
@@ -634,10 +758,15 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Tugas 3 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.16 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 3 — Advanced Checks</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas3").map((tab) => (
@@ -674,7 +803,50 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
+
+          {/* Tugas 4 */}
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.24 }}
+          >
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 4 — Weighted Graph</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TABS.filter((t) => t.group === "tugas4").map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setResult(null);
+                    setError("");
+                    setHighlightNodes([]);
+                    setHighlightEdges([]);
+                    setComponentColors(new Map());
+                    setIslandLabels(undefined);
+                    setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
+                    setDiameterPath([]);
+                    setDiameterLength(undefined);
+                    setGirthValue(undefined);
+                    setGirthCycle([]);
+                    setMstEdges([]);
+                    setMstTotalWeight(undefined);
+                    clearAnimations();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? "bg-amber-400/15 border border-amber-400/40 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.12)]"
+                      : "glass-btn text-white/60 hover:text-white/90"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
         </div>
 
         {/* Description */}
@@ -689,7 +861,10 @@ export default function Home() {
         <div className="lg:col-span-2 space-y-4">
           {isGraphOp ? (
             <>
-              <GraphInput onGraphChange={handleGraphChange} />
+              <GraphInput
+                onGraphChange={handleGraphChange}
+                onFileLoaded={handleFileLoaded}
+              />
 
               {/* Extra params */}
               {needsStart && (
@@ -776,6 +951,7 @@ export default function Home() {
               cyclePathNodes={cyclePathNodes}
               diameterPathNodes={diameterPath}
               girthCycleNodes={girthCycle}
+              mstEdges={mstEdges}
             />
           )}
 
