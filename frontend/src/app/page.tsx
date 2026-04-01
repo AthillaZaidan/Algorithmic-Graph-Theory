@@ -918,6 +918,7 @@ export default function Home() {
               cyclePathNodes={cyclePathNodes}
               diameterPathNodes={diameterPath}
               girthCycleNodes={girthCycle}
+              mstEdges={mstEdges}
             />
           )}
 
