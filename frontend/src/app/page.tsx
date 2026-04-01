@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
@@ -292,9 +293,15 @@ export default function Home() {
             <p className="text-white/60 text-xs uppercase tracking-wide">Traversal Order</p>
             <div className="flex flex-wrap gap-1.5">
               {((result.traversal as number[]) || []).map((node: number, i: number) => (
-                <span key={i} className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 text-sm font-mono font-semibold">
+                <motion.span
+                  key={i}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: i * 0.05, type: "spring", stiffness: 300 }}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 text-sm font-mono font-semibold"
+                >
                   {node}
-                </span>
+                </motion.span>
               ))}
             </div>
             <p className="text-white/40 text-xs mt-2">
@@ -642,14 +649,20 @@ export default function Home() {
             <p className="text-white/50 text-xs uppercase tracking-wide mt-2">Edge MST ({(result.mstEdges as number[][])?.length || 0})</p>
             <div className="space-y-1 max-h-36 overflow-y-auto">
               {((result.mstEdges as number[][]) || []).map(([u, v, w], i) => (
-                <div key={i} className="flex items-center gap-2 text-xs font-mono bg-white/[0.03] rounded px-2 py-1">
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.04, duration: 0.2 }}
+                  className="flex items-center gap-2 text-xs font-mono bg-white/[0.03] rounded px-2 py-1"
+                >
                   <span className="text-cyan-400">{u}</span>
                   <span className="text-white/30">↔</span>
                   <span className="text-teal-400">{v}</span>
                   {w !== undefined && (
                     <span className="text-amber-400/70 ml-auto">w={w}</span>
                   )}
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -674,7 +687,12 @@ export default function Home() {
       <div className="glass p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Tugas 1 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 1 — Traversal &amp; Analysis</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas1").map((tab) => (
@@ -703,10 +721,15 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Tugas 2 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.08 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 2 — Components &amp; Islands</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas2").map((tab) => (
@@ -735,10 +758,15 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Tugas 3 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.16 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 3 — Advanced Checks</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas3").map((tab) => (
@@ -775,10 +803,15 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Tugas 4 */}
-          <div className="flex-1">
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.24 }}
+          >
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 4 — Weighted Graph</p>
             <div className="flex flex-wrap gap-1.5">
               {TABS.filter((t) => t.group === "tugas4").map((tab) => (
@@ -813,7 +846,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
         </div>
 
         {/* Description */}
