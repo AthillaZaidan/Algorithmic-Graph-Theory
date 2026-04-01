@@ -1,0 +1,6 @@
+# Graf tak berbobot tidak terhubung - 6 node, 3 edge
+# Komponen: {0,1,2} dan {3,4,5}
+6 3
+0 1
+1 2
+3 5
