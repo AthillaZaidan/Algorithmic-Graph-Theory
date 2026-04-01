@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { motion } from "framer-motion";
 
 interface ResultPanelProps {
   title: string;
@@ -21,7 +22,14 @@ export default function ResultPanel({ title, children, loading }: ResultPanelPro
           Processing...
         </div>
       ) : (
-        <div className="text-white/80 text-sm leading-relaxed">{children}</div>
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="text-white/80 text-sm leading-relaxed"
+        >
+          {children}
+        </motion.div>
       )}
     </div>
   );

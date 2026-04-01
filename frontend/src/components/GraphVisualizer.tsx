@@ -17,6 +17,7 @@ interface GraphVisualizerProps {
   cyclePathNodes?: number[];
   diameterPathNodes?: number[];
   girthCycleNodes?: number[];
+  mstEdges?: number[][];
 }
 
 export default function GraphVisualizer({
@@ -29,6 +30,7 @@ export default function GraphVisualizer({
   cyclePathNodes = [],
   diameterPathNodes = [],
   girthCycleNodes = [],
+  mstEdges,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
@@ -88,6 +90,15 @@ export default function GraphVisualizer({
     }
     return s;
   }, [girthCycleNodes]);
+
+  const mstEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of (mstEdges ?? [])) {
+      s.add(`${e[0]}-${e[1]}`);
+      s.add(`${e[1]}-${e[0]}`);
+    }
+    return s;
+  }, [mstEdges]);
 
   // Incrementally update nodes to keep existing positions stable
   const graphData = useMemo(() => {
@@ -183,6 +194,7 @@ export default function GraphVisualizer({
             const isDia = diameterEdgeSet.has(key);
             const isGirth = girthEdgeSet.has(key);
             const isHL = highlightEdgeSet.has(key);
+            const isMst = mstEdgeSet.has(key);
 
             ctx.beginPath();
             ctx.moveTo(src.x, src.y!);
@@ -208,6 +220,16 @@ export default function GraphVisualizer({
               ctx.lineTo(tgt.x, tgt.y!);
               ctx.strokeStyle = "#4ade80"; // green
               ctx.lineWidth = 3;
+            } else if (isMst) {
+              // MST edge appears amber
+              ctx.strokeStyle = "rgba(245,158,11,0.2)";
+              ctx.lineWidth = 6;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y!);
+              ctx.lineTo(tgt.x, tgt.y!);
+              ctx.strokeStyle = "#f59e0b"; // amber
+              ctx.lineWidth = 2.5;
             } else if (isHL) {
               // Glow for highlighted edges
               ctx.strokeStyle = "rgba(34,211,238,0.25)";
@@ -223,6 +245,23 @@ export default function GraphVisualizer({
               ctx.lineWidth = 2;
             }
             ctx.stroke();
+
+            // Draw weight label if edge has a weight
+            const edge = (edges || []).find((e) =>
+              (e[0] === sourceId && e[1] === targetId) ||
+              (e[1] === sourceId && e[0] === targetId)
+            );
+            if (edge && edge[2] !== undefined) {
+              const midX = (src.x + tgt.x!) / 2;
+              const midY = (src.y! + tgt.y!) / 2;
+              ctx.save();
+              ctx.font = "4px Sans-Serif";
+              ctx.fillStyle = "#f59e0b";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(`${edge[2]}`, midX, midY - 4);
+              ctx.restore();
+            }
           }}
           linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"

@@ -4,7 +4,8 @@ import { callCppEngine, GraphRequest } from "@/lib/cpp-bridge";
 const VALID_OPERATIONS = [
   "dfs", "bfs", "check_path", "check_connectivity",
   "count_components", "largest_component", "count_islands",
-  "check_bipartite", "check_cycle", "diameter", "girth"
+  "check_bipartite", "check_cycle", "diameter", "girth",
+  "shortest_path", "min_spanning_tree"
 ];
 
 export async function POST(request: NextRequest) {
