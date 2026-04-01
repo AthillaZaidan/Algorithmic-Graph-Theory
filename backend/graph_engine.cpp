@@ -838,8 +838,9 @@ int main() {
                 for (auto& e : input["edges"]) {
                     int u = e[0].get<int>();
                     int v = e[1].get<int>();
-                    int w = e.size() >= 3 ? e[2].get<int>() : 1;
+                    int w = (int)e.size() >= 3 ? e[2].get<int>() : 1;
                     if (u == v) continue;
+                    if (w < 0) continue; // Dijkstra tidak valid untuk bobot negatif
                     weightedEdges.push_back({u, v, w});
                 }
             }
