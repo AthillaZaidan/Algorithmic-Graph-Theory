@@ -5,6 +5,7 @@ import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
+import { GraphResponse } from "@/lib/cpp-bridge";
 
 type Operation =
   | "dfs"
@@ -17,7 +18,9 @@ type Operation =
   | "check_bipartite"
   | "check_cycle"
   | "diameter"
-  | "girth";
+  | "girth"
+  | "shortest_path"
+  | "min_spanning_tree";
 
 interface TabDef {
   id: Operation;
@@ -56,7 +59,7 @@ export default function Home() {
   const [grid, setGrid] = useState<string[]>(Array.from({ length: 5 }, () => "....."));
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<GraphResponse | null>(null);
   const [error, setError] = useState("");
 
   // Visualization state
@@ -311,9 +314,11 @@ export default function Home() {
                 {result.connected ? "Graf TERHUBUNG" : "Graf TIDAK TERHUBUNG"}
               </span>
             </div>
-            <p className="text-white/50 text-sm">
-              {result.reachable as number} dari {result.total as number} node terjangkau dari node 0
-            </p>
+            {result.reachable && (
+              <p className="text-white/50 text-sm">
+                Total {result.total as number} node dalam graf
+              </p>
+            )}
           </div>
         );
 
