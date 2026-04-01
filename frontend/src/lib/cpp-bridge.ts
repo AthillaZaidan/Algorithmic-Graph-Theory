@@ -42,7 +42,7 @@ export interface GraphResponse {
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {
   return new Promise((resolve, reject) => {
     const enginePath = process.env.CPP_ENGINE_PATH ||
-      path.resolve(process.cwd(), "..", "backend", "graph_engine.exe");
+      path.resolve(process.cwd(), "..", "backend", "graph_engine");
 
     const child = spawn(enginePath, [], {
       stdio: ["pipe", "pipe", "pipe"],
