@@ -1,0 +1,7 @@
+# Tugas 1 - Cek Keterhubungan: Graf TIDAK TERHUBUNG
+# 3 komponen terpisah: {0,1}, {2,3,4}, {5,6}
+7 4
+0 1
+2 3
+3 4
+5 6

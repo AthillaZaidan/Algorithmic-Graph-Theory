@@ -1,0 +1,11 @@
+# Tugas 1 - DFS & BFS
+# Graf terhubung sederhana, 6 node
+# DFS dari node 0: 0->1->3->5->4->2
+# BFS dari node 0: 0->1->2->3->4->5
+6 6
+0 1
+0 2
+1 3
+1 4
+2 4
+3 5
