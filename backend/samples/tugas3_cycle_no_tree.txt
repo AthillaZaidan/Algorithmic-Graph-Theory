@@ -1,0 +1,9 @@
+# Tugas 3 - Deteksi Siklus: TIDAK ADA siklus (pohon/tree)
+# Pohon dengan 7 node — N-1=6 edge, tidak ada siklus
+7 6
+0 1
+0 2
+1 3
+1 4
+2 5
+2 6

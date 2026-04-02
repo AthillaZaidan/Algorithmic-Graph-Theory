@@ -1,0 +1,12 @@
+# Tugas 3 - Girth: Siklus terpendek = 3 (segitiga)
+# Girth = 3, siklus terpendek: 0-1-2-0
+# Graf juga punya siklus panjang 4 dan 5
+6 8
+0 1
+1 2
+2 0
+0 3
+3 4
+4 5
+5 0
+1 4

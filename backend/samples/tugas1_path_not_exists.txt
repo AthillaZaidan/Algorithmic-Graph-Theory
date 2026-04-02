@@ -1,0 +1,7 @@
+# Tugas 1 - Cek Path: Path TIDAK ADA dari 0 ke 5
+# Graf terputus: {0,1,2} tidak terhubung ke {3,4,5}
+6 4
+0 1
+1 2
+3 4
+4 5
