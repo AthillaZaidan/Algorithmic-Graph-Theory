@@ -9,6 +9,9 @@
 #include <climits>
 #include <numeric>
 #include <tuple>
+#include <cmath>
+#include <chrono>
+#include <cstdlib>
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -702,293 +705,138 @@ json computeMST(int N, const vector<tuple<int,int,int>>& weightedEdges) {
 
 // ========== TUGAS 5 ==========
 
-json solveTSPRepeatedNearestNeighbor(int N, const vector<tuple<int,int,int>>& weightedEdges) {
+int candidateListSizeTSP(int n) {
+    if (n > 750) return 17;
+    if (n > 500) return 15;
+    if (n > 100) return 10;
+    if (n > 25) return 5;
+    return 3;
+}
+
+vector<int> graspConstructTSP(const vector<vector<double>>& cost, int start, int n) {
+    vector<int> tour;
+    vector<bool> visited(n, false);
+    tour.push_back(start);
+    visited[start] = true;
+    int current = start;
+
+    while ((int)tour.size() < n) {
+        vector<pair<double, int>> candidates;
+        for (int v = 0; v < n; v++) {
+            if (!visited[v] && cost[current][v] < 1e17) {
+                candidates.push_back({cost[current][v], v});
+            }
+        }
+        if (candidates.empty()) {
+            return {};
+        }
+        sort(candidates.begin(), candidates.end());
+        int k = min((int)candidates.size(), candidateListSizeTSP(n));
+        int pick = rand() % k;
+        int next = candidates[pick].second;
+        tour.push_back(next);
+        visited[next] = true;
+        current = next;
+    }
+    tour.push_back(start);
+    return tour;
+}
+
+double tourCostTSP(const vector<int>& tour, const vector<vector<double>>& cost, int n) {
+    double total = 0;
+    for (int i = 0; i < n; i++) {
+        total += cost[tour[i]][tour[i + 1]];
+    }
+    return total;
+}
+
+vector<int> twoOptTSP(const vector<int>& tour, const vector<vector<double>>& cost, int n) {
+    vector<int> best = tour;
+    bool improved = true;
+    while (improved) {
+        improved = false;
+        for (int i = 0; i < n - 1; i++) {
+            for (int j = i + 2; j < n; j++) {
+                if (i == 0 && j == n - 1) continue;
+                double oldCost = cost[best[i]][best[i + 1]] + cost[best[j]][best[j + 1]];
+                double newCost = cost[best[i]][best[j]] + cost[best[i + 1]][best[j + 1]];
+                if (newCost < oldCost - 1e-9) {
+                    reverse(best.begin() + i + 1, best.begin() + j + 1);
+                    improved = true;
+                }
+            }
+        }
+    }
+    return best;
+}
+
+json solveTSPGraspSwap(int N, const vector<vector<double>>& cost, int startNode, int timeLimitMs) {
     if (N <= 1) {
         return json{
             {"feasible", true},
-            {"startNode", 0},
+            {"startNode", startNode},
             {"totalCost", 0},
-            {"tour", json::array({0, 0})},
-            {"tourEdges", json::array()},
-            {"visitedCount", N},
-            {"attemptedStarts", N},
-            {"validStarts", N}
+            {"tour", json::array({startNode, startNode})},
+            {"tourEdges", json::array()}
         };
-    }
-
-    vector<vector<pair<int,int>>> adjW(N);
-    for (const auto& e : weightedEdges) {
-        int u = get<0>(e), v = get<1>(e), w = get<2>(e);
-        if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
-        adjW[u].push_back({v, w});
-        adjW[v].push_back({u, w});
     }
 
     vector<int> bestTour;
-    vector<tuple<int,int,int>> bestTourEdges;
-    int bestStart = -1;
-    int bestCost = INT_MAX;
-    int validStarts = 0;
+    double bestCost = 1e18;
 
-    for (int start = 0; start < N; start++) {
-        vector<bool> visitedLocal(N, false);
-        vector<int> currentTour;
-        vector<tuple<int,int,int>> currentEdges;
-        int current = start;
-        int totalCost = 0;
-        int visitedCount = 1;
-        bool failed = false;
+    auto startTime = chrono::steady_clock::now();
+    int iterations = 0;
 
-        visitedLocal[start] = true;
-        currentTour.push_back(start);
+    while (true) {
+        auto now = chrono::steady_clock::now();
+        auto elapsed = chrono::duration_cast<chrono::milliseconds>(now - startTime).count();
+        if (elapsed >= timeLimitMs) break;
 
-        while (visitedCount < N) {
-            int nextNode = -1;
-            int nextWeight = INT_MAX;
-
-            for (const auto& neighbor : adjW[current]) {
-                int v = neighbor.first;
-                int w = neighbor.second;
-                if (visitedLocal[v]) continue;
-
-                if (w < nextWeight || (w == nextWeight && v < nextNode)) {
-                    nextNode = v;
-                    nextWeight = w;
-                }
-            }
-
-            if (nextNode == -1) {
-                failed = true;
-                break;
-            }
-
-            visitedLocal[nextNode] = true;
-            currentTour.push_back(nextNode);
-            currentEdges.push_back({current, nextNode, nextWeight});
-            totalCost += nextWeight;
-            current = nextNode;
-            visitedCount++;
+        vector<int> tour = graspConstructTSP(cost, startNode, N);
+        if (tour.empty()) {
+            iterations++;
+            if (iterations > 1000) break;
+            continue;
         }
-
-        if (failed) continue;
-
-        int returnWeight = INT_MAX;
-        for (const auto& neighbor : adjW[current]) {
-            if (neighbor.first == start) {
-                returnWeight = min(returnWeight, neighbor.second);
-            }
+        tour = twoOptTSP(tour, cost, N);
+        double c = tourCostTSP(tour, cost, N);
+        if (c < bestCost) {
+            bestCost = c;
+            bestTour = tour;
         }
-
-        if (returnWeight == INT_MAX) continue;
-
-        currentTour.push_back(start);
-        currentEdges.push_back({current, start, returnWeight});
-        totalCost += returnWeight;
-        validStarts++;
-
-        if (totalCost < bestCost ||
-            (totalCost == bestCost && (bestStart == -1 || start < bestStart))) {
-            bestCost = totalCost;
-            bestStart = start;
-            bestTour = currentTour;
-            bestTourEdges = currentEdges;
-        }
+        iterations++;
     }
 
-    if (bestStart == -1) {
+    if (bestTour.empty()) {
         return json{
             {"feasible", false},
-            {"startNode", -1},
+            {"startNode", startNode},
             {"totalCost", -1},
             {"tour", json::array()},
-            {"tourEdges", json::array()},
-            {"visitedCount", 0},
-            {"attemptedStarts", N},
-            {"validStarts", 0}
+            {"tourEdges", json::array()}
         };
     }
 
     json tourEdgesJson = json::array();
-    for (const auto& e : bestTourEdges) {
-        tourEdgesJson.push_back({get<0>(e), get<1>(e), get<2>(e)});
+    for (int i = 0; i < N; i++) {
+        int u = bestTour[i];
+        int v = bestTour[i + 1];
+        tourEdgesJson.push_back({u, v, cost[u][v]});
     }
 
     return json{
         {"feasible", true},
-        {"startNode", bestStart},
+        {"startNode", startNode},
         {"totalCost", bestCost},
         {"tour", bestTour},
-        {"tourEdges", tourEdgesJson},
-        {"visitedCount", N},
-        {"attemptedStarts", N},
-        {"validStarts", validStarts}
-    };
-}
-
-void tspBacktrackRecursive(
-    int start,
-    int current,
-    int visitedCount,
-    int currentCost,
-    const vector<vector<int>>& costMatrix,
-    vector<bool>& visitedLocal,
-    vector<int>& currentPath,
-    int& bestCost,
-    vector<int>& bestPath,
-    json& replaySteps
-) {
-    int N = (int)costMatrix.size();
-
-    if (visitedCount == N) {
-        if (costMatrix[current][start] == INT_MAX) {
-            replaySteps.push_back(json{
-                {"type", "complete_fail"},
-                {"path", currentPath},
-                {"currentCost", currentCost},
-                {"bestCost", bestCost == INT_MAX ? -1 : bestCost},
-                {"nextNode", start}
-            });
-            return;
-        }
-        int totalCost = currentCost + costMatrix[current][start];
-        vector<int> completedTour = currentPath;
-        completedTour.push_back(start);
-        replaySteps.push_back(json{
-            {"type", "complete"},
-            {"path", completedTour},
-            {"currentCost", totalCost},
-            {"bestCost", bestCost == INT_MAX ? -1 : bestCost},
-            {"nextNode", start}
-        });
-        if (totalCost < bestCost) {
-            bestCost = totalCost;
-            bestPath = currentPath;
-            bestPath.push_back(start);
-            replaySteps.push_back(json{
-                {"type", "best_update"},
-                {"path", bestPath},
-                {"currentCost", totalCost},
-                {"bestCost", bestCost},
-                {"nextNode", start}
-            });
-        }
-        return;
-    }
-
-    for (int next = 0; next < N; next++) {
-        if (visitedLocal[next]) continue;
-        if (costMatrix[current][next] == INT_MAX) continue;
-
-        visitedLocal[next] = true;
-        currentPath.push_back(next);
-        replaySteps.push_back(json{
-            {"type", "explore"},
-            {"path", currentPath},
-            {"currentCost", currentCost + costMatrix[current][next]},
-            {"bestCost", bestCost == INT_MAX ? -1 : bestCost},
-            {"nextNode", next}
-        });
-
-        tspBacktrackRecursive(
-            start,
-            next,
-            visitedCount + 1,
-            currentCost + costMatrix[current][next],
-            costMatrix,
-            visitedLocal,
-            currentPath,
-            bestCost,
-            bestPath,
-            replaySteps
-        );
-
-        currentPath.pop_back();
-        visitedLocal[next] = false;
-    }
-}
-
-json solveTSPRecursiveExact(int N, const vector<tuple<int,int,int>>& weightedEdges, int start) {
-    if (N <= 0) {
-        return json{
-            {"feasible", false},
-            {"startNode", -1},
-            {"totalCost", -1},
-            {"tour", json::array()},
-            {"tourEdges", json::array()},
-            {"visitedCount", 0}
-        };
-    }
-
-    if (N == 1) {
-        return json{
-            {"feasible", true},
-            {"startNode", start},
-            {"totalCost", 0},
-            {"tour", json::array({start, start})},
-            {"tourEdges", json::array()},
-            {"visitedCount", 1}
-        };
-    }
-
-    vector<vector<int>> costMatrix(N, vector<int>(N, INT_MAX));
-    for (int i = 0; i < N; i++) costMatrix[i][i] = 0;
-
-    for (const auto& e : weightedEdges) {
-        int u = get<0>(e), v = get<1>(e), w = get<2>(e);
-        if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
-        costMatrix[u][v] = min(costMatrix[u][v], w);
-        costMatrix[v][u] = min(costMatrix[v][u], w);
-    }
-
-    vector<bool> visitedLocal(N, false);
-    vector<int> currentPath = {start};
-    vector<int> bestPath;
-    int bestCost = INT_MAX;
-    json replaySteps = json::array();
-
-    visitedLocal[start] = true;
-    replaySteps.push_back(json{
-        {"type", "start"},
-        {"path", currentPath},
-        {"currentCost", 0},
-        {"bestCost", -1},
-        {"nextNode", start}
-    });
-    tspBacktrackRecursive(start, start, 1, 0, costMatrix, visitedLocal, currentPath, bestCost, bestPath, replaySteps);
-
-    if (bestPath.empty()) {
-        return json{
-            {"feasible", false},
-            {"startNode", start},
-            {"totalCost", -1},
-            {"tour", json::array()},
-            {"tourEdges", json::array()},
-            {"visitedCount", 0},
-            {"replaySteps", replaySteps}
-        };
-    }
-
-    json tourEdgesJson = json::array();
-    for (int i = 0; i + 1 < (int)bestPath.size(); i++) {
-        int u = bestPath[i];
-        int v = bestPath[i + 1];
-        tourEdgesJson.push_back({u, v, costMatrix[u][v]});
-    }
-
-    return json{
-        {"feasible", true},
-        {"startNode", start},
-        {"totalCost", bestCost},
-        {"tour", bestPath},
-        {"tourEdges", tourEdgesJson},
-        {"visitedCount", N},
-        {"replaySteps", replaySteps}
+        {"tourEdges", tourEdgesJson}
     };
 }
 
 // ========== Main: Read JSON from stdin, dispatch, write JSON to stdout ==========
 
 int main() {
+    srand((unsigned int)chrono::steady_clock::now().time_since_epoch().count());
     try {
         json input;
         cin >> input;
@@ -1001,8 +849,8 @@ int main() {
             operation == "check_connectivity") {
 
             int numVertices = input.at("numVertices").get<int>();
-            if (numVertices < 0 || numVertices > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+            if (numVertices < 0 || numVertices > 1024) {
+                cout << json{{"success", false}, {"error", "numVertices harus 0-1024"}}.dump() << endl;
                 return 0;
             }
 
@@ -1056,8 +904,8 @@ int main() {
         } else if (operation == "count_components" || operation == "largest_component") {
 
             int N = input.at("numVertices").get<int>();
-            if (N < 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+            if (N < 0 || N > 1000) {
+                cout << json{{"success", false}, {"error", "numVertices harus 0-1024"}}.dump() << endl;
                 return 0;
             }
 
@@ -1097,8 +945,8 @@ int main() {
         } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth") {
 
             int N = input.at("numVertices").get<int>();
-            if (N < 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 0-500"}}.dump() << endl;
+            if (N < 0 || N > 1000) {
+                cout << json{{"success", false}, {"error", "numVertices harus 0-1024"}}.dump() << endl;
                 return 0;
             }
 
@@ -1161,8 +1009,8 @@ int main() {
 
         } else if (operation == "shortest_path") {
             int N = input.at("numVertices").get<int>();
-            if (N <= 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 1-500"}}.dump() << endl;
+            if (N <= 0 || N > 1000) {
+                cout << json{{"success", false}, {"error", "numVertices harus 1-1024"}}.dump() << endl;
                 return 0;
             }
             int a = input.at("nodeA").get<int>();
@@ -1194,8 +1042,8 @@ int main() {
 
         } else if (operation == "min_spanning_tree") {
             int N = input.at("numVertices").get<int>();
-            if (N <= 0 || N > 500) {
-                cout << json{{"success", false}, {"error", "numVertices harus 1-500"}}.dump() << endl;
+            if (N <= 0 || N > 1000) {
+                cout << json{{"success", false}, {"error", "numVertices harus 1-1024"}}.dump() << endl;
                 return 0;
             }
 
@@ -1219,72 +1067,68 @@ int main() {
                 {"mstEdges", mstResult["mstEdges"]}
             };
 
-        } else if (operation == "tsp_repeated_nn") {
-            int N = input.at("numVertices").get<int>();
-            if (N <= 0 || N > 14) {
-                cout << json{{"success", false}, {"error", "numVertices untuk visualisasi TSP harus 1-14"}}.dump() << endl;
-                return 0;
-            }
+        } else if (operation == "tsp_grasp_swap") {
+            string mode = input.value("mode", "edge");
+            int startNode = input.value("startNode", 0);
+            int timeLimitMs = input.value("timeLimitMs", 5000);
+            if (timeLimitMs < 100) timeLimitMs = 100;
+            if (timeLimitMs > 9000) timeLimitMs = 9000;
 
-            vector<tuple<int,int,int>> weightedEdges;
-            if (input.contains("edges")) {
-                for (auto& e : input["edges"]) {
-                    int u = e[0].get<int>();
-                    int v = e[1].get<int>();
-                    int w = (int)e.size() >= 3 ? e[2].get<int>() : 1;
-                    if (u == v) continue;
-                    if (w < 0) continue;
-                    weightedEdges.push_back({u, v, w});
+            vector<vector<double>> cost;
+            int N = 0;
+
+            if (mode == "coordinate") {
+                auto coords = input.at("coordinates");
+                N = (int)coords.size();
+                if (N <= 0 || N > 1024) {
+                    cout << json{{"success", false}, {"error", "TSP coordinate mode harus 1-1024 node"}}.dump() << endl;
+                    return 0;
+                }
+                cost.assign(N, vector<double>(N, 0.0));
+                for (int i = 0; i < N; i++) {
+                    double xi = coords[i]["x"].get<double>();
+                    double yi = coords[i]["y"].get<double>();
+                    for (int j = i + 1; j < N; j++) {
+                        double xj = coords[j]["x"].get<double>();
+                        double yj = coords[j]["y"].get<double>();
+                        double d = sqrt((xi - xj) * (xi - xj) + (yi - yj) * (yi - yj));
+                        cost[i][j] = d;
+                        cost[j][i] = d;
+                    }
+                }
+            } else {
+                N = input.at("numVertices").get<int>();
+                if (N <= 0 || N > 1024) {
+                    cout << json{{"success", false}, {"error", "numVertices untuk TSP harus 1-1024"}}.dump() << endl;
+                    return 0;
+                }
+                cost.assign(N, vector<double>(N, 1e18));
+                for (int i = 0; i < N; i++) cost[i][i] = 0.0;
+
+                if (input.contains("edges")) {
+                    for (auto& e : input["edges"]) {
+                        int u = e[0].get<int>();
+                        int v = e[1].get<int>();
+                        double w = (int)e.size() >= 3 ? e[2].get<double>() : 1.0;
+                        if (u == v) continue;
+                        if (w < 0) continue;
+                        if (u < 0 || u >= N || v < 0 || v >= N) continue;
+                        cost[u][v] = min(cost[u][v], w);
+                        cost[v][u] = min(cost[v][u], w);
+                    }
                 }
             }
 
-            json tspResult = solveTSPRepeatedNearestNeighbor(N, weightedEdges);
+            if (startNode < 0 || startNode >= N) startNode = 0;
+
+            json tspResult = solveTSPGraspSwap(N, cost, startNode, timeLimitMs);
             result = json{
                 {"success", true},
                 {"feasible", tspResult["feasible"]},
                 {"startNode", tspResult["startNode"]},
                 {"totalCost", tspResult["totalCost"]},
                 {"tour", tspResult["tour"]},
-                {"tourEdges", tspResult["tourEdges"]},
-                {"visitedCount", tspResult["visitedCount"]},
-                {"attemptedStarts", tspResult["attemptedStarts"]},
-                {"validStarts", tspResult["validStarts"]}
-            };
-
-        } else if (operation == "tsp_recursive_exact") {
-            int N = input.at("numVertices").get<int>();
-            if (N <= 0 || N > 11) {
-                cout << json{{"success", false}, {"error", "numVertices untuk TSP rekursif exact harus 1-11"}}.dump() << endl;
-                return 0;
-            }
-            int start = input.value("startNode", 0);
-            if (start < 0 || start >= N) {
-                cout << json{{"success", false}, {"error", "startNode untuk TSP exact di luar index"}}.dump() << endl;
-                return 0;
-            }
-
-            vector<tuple<int,int,int>> weightedEdges;
-            if (input.contains("edges")) {
-                for (auto& e : input["edges"]) {
-                    int u = e[0].get<int>();
-                    int v = e[1].get<int>();
-                    int w = (int)e.size() >= 3 ? e[2].get<int>() : 1;
-                    if (u == v) continue;
-                    if (w < 0) continue;
-                    weightedEdges.push_back({u, v, w});
-                }
-            }
-
-            json tspResult = solveTSPRecursiveExact(N, weightedEdges, start);
-            result = json{
-                {"success", true},
-                {"feasible", tspResult["feasible"]},
-                {"startNode", tspResult["startNode"]},
-                {"totalCost", tspResult["totalCost"]},
-                {"tour", tspResult["tour"]},
-                {"tourEdges", tspResult["tourEdges"]},
-                {"visitedCount", tspResult["visitedCount"]},
-                {"replaySteps", tspResult["replaySteps"]}
+                {"tourEdges", tspResult["tourEdges"]}
             };
 
         } else {
