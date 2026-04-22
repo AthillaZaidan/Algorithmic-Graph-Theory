@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
 import { GraphResponse } from "@/lib/cpp-bridge";
-
-type TspReplayStep = NonNullable<GraphResponse["replaySteps"]>[number];
 
 type Operation =
   | "dfs"
@@ -24,8 +22,7 @@ type Operation =
   | "girth"
   | "shortest_path"
   | "min_spanning_tree"
-  | "tsp_repeated_nn"
-  | "tsp_recursive_exact";
+  | "tsp_grasp_swap";
 
 interface TabDef {
   id: Operation;
@@ -48,8 +45,7 @@ const TABS: TabDef[] = [
   { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf" },
   { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)" },
   { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
-  { id: "tsp_repeated_nn", label: "TSP NN", group: "tugas5", description: "Travelling Salesman Problem heuristic dengan Repeated Nearest Neighbor" },
-  { id: "tsp_recursive_exact", label: "TSP Exact", group: "tugas5", description: "Travelling Salesman Problem exact dengan backtracking rekursif dari start node pilihan user" },
+  { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
 ];
 
 const COMPONENT_COLORS = [
@@ -89,57 +85,217 @@ export default function Home() {
   const [tspTourEdges, setTspTourEdges] = useState<number[][]>([]);
   const [tspTotalCost, setTspTotalCost] = useState<number | undefined>();
   const [tspStartNode, setTspStartNode] = useState<number | undefined>();
-  const [tspReplaySteps, setTspReplaySteps] = useState<TspReplayStep[]>([]);
-  const [tspReplayIndex, setTspReplayIndex] = useState(0);
-  const [tspReplayPlaying, setTspReplayPlaying] = useState(false);
+  const [tspMode, setTspMode] = useState<"edge" | "coordinate">("edge");
+  const [coordinates, setCoordinates] = useState<{ x: number; y: number }[]>([
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 50, y: 87 },
+  ]);
+  const [coordPreset, setCoordPreset] = useState("");
+  const [coordN, setCoordN] = useState(6);
+  const [coordM, setCoordM] = useState(3);
+  const [coordK, setCoordK] = useState(2);
+  const [coordA1, setCoordA1] = useState(1);
+  const [coordA2, setCoordA2] = useState(2);
   const [isWeightedMode, setIsWeightedMode] = useState(false);
 
+  const [coordStructEdges, setCoordStructEdges] = useState<number[][]>([]);
+
+  const coordDisplayEdges = useMemo(() => {
+    if (activeTab !== "tsp_grasp_swap" || tspMode !== "coordinate") return [];
+    if (coordStructEdges.length > 0) return coordStructEdges;
+    const n = coordinates.length;
+    const result: number[][] = [];
+    const edgeSet = new Set<string>();
+    const add = (u: number, v: number) => {
+      if (u === v) return;
+      const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        const dx = coordinates[u].x - coordinates[v].x;
+        const dy = coordinates[u].y - coordinates[v].y;
+        const w = Math.round(Math.sqrt(dx * dx + dy * dy) * 100) / 100;
+        result.push([u, v, w]);
+      }
+    };
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        add(i, j);
+      }
+    }
+    return result;
+  }, [activeTab, tspMode, coordinates, coordStructEdges]);
+
+  const generateCoordPreset = () => {
+    let pts: { x: number; y: number }[] = [];
+    const structEdges: number[][] = [];
+    const R = 100;
+    const n = coordN;
+
+    const poly = (i: number, total: number, cx = 0, cy = 0, r = R) => ({
+      x: Math.round((cx + r * Math.cos((2 * Math.PI * i) / total - Math.PI / 2)) * 100) / 100,
+      y: Math.round((cy + r * Math.sin((2 * Math.PI * i) / total - Math.PI / 2)) * 100) / 100,
+    });
+
+    const add = (u: number, v: number) => {
+      if (u === v || u < 0 || v < 0) return;
+      const dx = pts[u].x - pts[v].x;
+      const dy = pts[u].y - pts[v].y;
+      const w = Math.round(Math.sqrt(dx * dx + dy * dy) * 100) / 100;
+      structEdges.push([u, v, w]);
+    };
+
+    switch (coordPreset) {
+      case "complete":
+        pts = Array.from({ length: n }, (_, i) => poly(i, n));
+        for (let i = 0; i < pts.length; i++)
+          for (let j = i + 1; j < pts.length; j++) add(i, j);
+        break;
+      case "completeBipartite": {
+        const m = coordM;
+        for (let i = 0; i < m; i++) pts.push({ x: -60, y: Math.round((i - (m - 1) / 2) * 60 * 100) / 100 });
+        for (let i = 0; i < n; i++) pts.push({ x: 60, y: Math.round((i - (n - 1) / 2) * 60 * 100) / 100 });
+        for (let i = 0; i < m; i++)
+          for (let j = m; j < pts.length; j++) add(i, j);
+        break;
+      }
+      case "tree":
+        pts = Array.from({ length: n }, (_, i) => {
+          if (i === 0) return { x: 0, y: 0 };
+          const yOff = (Math.floor(Math.log2(i + 1)) + 1) * 60;
+          const siblings = 1 << Math.floor(Math.log2(i + 1));
+          const idxInLevel = i - siblings;
+          const spread = (siblings > 1 ? 200 / (siblings - 1) : 0);
+          return {
+            x: Math.round((idxInLevel * spread - 100) * 100) / 100,
+            y: Math.round(yOff * 100) / 100,
+          };
+        });
+        for (let i = 1; i < pts.length; i++) add(Math.floor((i - 1) / 2), i);
+        break;
+      case "cycle":
+        pts = Array.from({ length: n }, (_, i) => poly(i, n));
+        for (let i = 0; i < pts.length; i++) add(i, (i + 1) % pts.length);
+        break;
+      case "path":
+        pts = Array.from({ length: n }, (_, i) => ({
+          x: Math.round((i * (200 / Math.max(1, n - 1)) - 100) * 100) / 100,
+          y: 0,
+        }));
+        for (let i = 0; i < pts.length - 1; i++) add(i, i + 1);
+        break;
+      case "wheel": {
+        pts.push({ x: 0, y: 0 });
+        for (let i = 0; i < n; i++) pts.push(poly(i, n));
+        for (let i = 1; i < pts.length; i++) add(0, i);
+        for (let i = 1; i < pts.length; i++) add(i, i < pts.length - 1 ? i + 1 : 1);
+        break;
+      }
+      case "prism": {
+        const half = n;
+        for (let i = 0; i < half; i++) pts.push(poly(i, half, 0, 0, R));
+        for (let i = 0; i < half; i++) pts.push(poly(i, half, 0, 0, R * 0.6));
+        for (let i = 0; i < half; i++) {
+          add(i, (i + 1) % half);
+          add(i + half, ((i + 1) % half) + half);
+          add(i, i + half);
+        }
+        break;
+      }
+      case "petersen": {
+        for (let i = 0; i < 5; i++) pts.push(poly(i, 5, 0, 0, R));
+        for (let i = 0; i < 5; i++) {
+          const a = (4 * Math.PI * i) / 5 - Math.PI / 2;
+          pts.push({
+            x: Math.round(R * 0.4 * Math.cos(a) * 100) / 100,
+            y: Math.round(R * 0.4 * Math.sin(a) * 100) / 100,
+          });
+        }
+        for (let i = 0; i < 5; i++) {
+          add(i, (i + 1) % 5);
+          add(i, i + 5);
+          add(i + 5, ((i + 2) % 5) + 5);
+        }
+        break;
+      }
+      case "generalizedPetersen":
+        for (let i = 0; i < n; i++) pts.push(poly(i, n, 0, 0, R));
+        for (let i = 0; i < n; i++) pts.push(poly(i, n, 0, 0, R * 0.45));
+        for (let i = 0; i < n; i++) {
+          add(i, (i + 1) % n);
+          add(i, i + n);
+          add(i + n, ((i + coordK) % n) + n);
+        }
+        break;
+      case "circulant":
+        pts = Array.from({ length: n }, (_, i) => poly(i, n));
+        for (let i = 0; i < n; i++) {
+          add(i, (i + coordA1) % n);
+          add(i, (i + coordA2) % n);
+        }
+        break;
+      case "hypercube": {
+        const dim = Math.max(1, Math.min(coordN, 6));
+        const total = 1 << dim;
+        const spacing = 200 / Math.max(1, dim);
+        for (let i = 0; i < total; i++) {
+          if (dim <= 1) {
+            pts.push({ x: i * 200 - 100, y: 0 });
+          } else if (dim <= 2) {
+            pts.push({ x: ((i & 1) * 2 - 1) * 80, y: ((i >> 1 & 1) * 2 - 1) * 80 });
+          } else {
+            const col = i & ((1 << (dim / 2)) - 1 || 1);
+            const row = i >> Math.floor(dim / 2);
+            pts.push({
+              x: Math.round((col - (1 << Math.floor(dim / 2)) / 2) * spacing * 100) / 100,
+              y: Math.round((row - (1 << Math.ceil(dim / 2)) / 2) * spacing * 100) / 100,
+            });
+          }
+        }
+        for (let i = 0; i < total; i++) {
+          for (let b = 0; b < dim; b++) {
+            const j = i ^ (1 << b);
+            if (j > i) add(i, j);
+          }
+        }
+        break;
+      }
+      case "grid": {
+        const m = coordM;
+        const cols = n;
+        for (let r = 0; r < m; r++) {
+          for (let c = 0; c < cols; c++) {
+            pts.push({
+              x: Math.round((c * 50 - (cols - 1) * 25) * 100) / 100,
+              y: Math.round((r * 50 - (m - 1) * 25) * 100) / 100,
+            });
+          }
+        }
+        for (let r = 0; r < m; r++) {
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            if (c + 1 < cols) add(idx, idx + 1);
+            if (r + 1 < m) add(idx, idx + cols);
+          }
+        }
+        break;
+      }
+      default:
+        return;
+    }
+    setCoordinates(pts);
+    setCoordStructEdges(structEdges);
+    setStartNode(0);
+  };
+
   const animationRef = useRef<NodeJS.Timeout[]>([]);
-  const replayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearAnimations = () => {
     animationRef.current.forEach(clearTimeout);
     animationRef.current = [];
-    if (replayTimerRef.current) {
-      clearTimeout(replayTimerRef.current);
-      replayTimerRef.current = null;
-    }
   };
 
-  useEffect(() => {
-    if (activeTab !== "tsp_recursive_exact") return;
-    if (!tspReplayPlaying) return;
-    if (tspReplaySteps.length === 0) return;
-    if (tspReplayIndex >= tspReplaySteps.length - 1) {
-      setTspReplayPlaying(false);
-      return;
-    }
 
-    replayTimerRef.current = setTimeout(() => {
-      setTspReplayIndex((prev) => prev + 1);
-    }, 550);
-
-    return () => {
-      if (replayTimerRef.current) {
-        clearTimeout(replayTimerRef.current);
-        replayTimerRef.current = null;
-      }
-    };
-  }, [activeTab, tspReplayPlaying, tspReplayIndex, tspReplaySteps]);
-
-  useEffect(() => {
-    if (activeTab !== "tsp_recursive_exact") return;
-    if (tspReplaySteps.length === 0) return;
-
-    const step = tspReplaySteps[Math.min(tspReplayIndex, tspReplaySteps.length - 1)];
-    const path = step.path ?? [];
-    const stepEdges: number[][] = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      stepEdges.push([path[i], path[i + 1]]);
-    }
-    setHighlightNodes(Array.from(new Set(path)));
-    setHighlightEdges(stepEdges);
-  }, [activeTab, tspReplayIndex, tspReplaySteps]);
 
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
     setNumVertices(nv);
@@ -178,12 +334,21 @@ export default function Home() {
 
     const body: Record<string, unknown> = { operation: activeTab };
 
-    if (activeTab !== "count_islands") {
+    if (activeTab === "tsp_grasp_swap") {
+      body.mode = tspMode;
+      body.startNode = startNode;
+      if (tspMode === "coordinate") {
+        body.coordinates = coordinates;
+      } else {
+        body.numVertices = numVertices;
+        body.edges = edges;
+      }
+    } else if (activeTab !== "count_islands") {
       body.numVertices = numVertices;
       body.edges = edges;
     }
 
-    if (activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_recursive_exact") {
+    if (activeTab === "dfs" || activeTab === "bfs") {
       body.startNode = startNode;
     } else if (activeTab === "check_path" || activeTab === "shortest_path") {
       body.nodeA = nodeA;
@@ -319,7 +484,7 @@ export default function Home() {
           setHighlightNodes(Array.from(mstNodes));
           setHighlightEdges(mst.map(([u, v]) => [u, v]));
         }
-      } else if (activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact") {
+      } else if (activeTab === "tsp_grasp_swap") {
         if (data.feasible && data.tour && data.tourEdges) {
           const tour = data.tour as number[];
           const tourEdges = data.tourEdges as number[][];
@@ -339,9 +504,9 @@ export default function Home() {
   };
 
   const isGraphOp = activeTab !== "count_islands";
-  const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_recursive_exact";
+  const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_grasp_swap";
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
-  const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact";
+  const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || (activeTab === "tsp_grasp_swap" && tspMode === "edge");
   const isWeightedGraph = isWeightedMode || edges.some((edge) => edge[2] !== undefined);
 
   const renderResult = () => {
@@ -739,46 +904,32 @@ export default function Home() {
           </div>
         );
 
-      case "tsp_repeated_nn":
+      case "tsp_grasp_swap":
         return (
           <div className="space-y-3">
             {result.feasible ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Best Cost</p>
-                    <p className="mt-1 font-mono text-2xl font-bold text-rose-300">{tspTotalCost ?? 0}</p>
-                  </div>
-                  <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Best Start</p>
-                    <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{result.startNode as number}</p>
-                  </div>
-                  <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Valid Starts</p>
-                    <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">
-                      {(result.validStarts as number) ?? 0}/{(result.attemptedStarts as number) ?? numVertices}
-                    </p>
-                  </div>
+                <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Total Cost</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{tspTotalCost ?? 0}</p>
                 </div>
 
-                <div className="glass border border-rose-400/20 p-4">
-                  <p className="mb-3 text-sm font-semibold text-rose-300">Best tour found by repeated nearest neighbor</p>
+                <div className="glass border border-orange-400/20 p-4">
+                  <p className="mb-3 text-sm font-semibold text-orange-300">Jalur hasil TSP GRASP+Swap</p>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {tspTour.map((node: number, i: number) => (
                       <span key={`${node}-${i}`} className="flex items-center gap-1.5">
-                        <span
-                          className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-mono font-semibold ${
-                            i === 0
-                              ? "border-orange-400/40 bg-orange-400/20 text-orange-300"
-                              : i === tspTour.length - 1
-                              ? "border-rose-400/30 bg-rose-400/15 text-rose-200"
-                              : "border-rose-400/30 bg-rose-400/15 text-rose-300"
-                          }`}
-                        >
+                        <span className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-mono font-semibold ${
+                          i === 0
+                            ? "border-orange-400/40 bg-orange-400/20 text-orange-300"
+                            : i === tspTour.length - 1
+                            ? "border-rose-400/30 bg-rose-400/15 text-rose-200"
+                            : "border-orange-400/30 bg-orange-400/15 text-orange-300"
+                        }`}>
                           {node}
                         </span>
                         {i < tspTour.length - 1 && (
-                          <span className="text-rose-300/70">{">"}</span>
+                          <span className="text-orange-300/70">{">"}</span>
                         )}
                       </span>
                     ))}
@@ -796,20 +947,20 @@ export default function Home() {
                         transition={{ delay: i * 0.03, duration: 0.18 }}
                         className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono"
                       >
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-400/15 text-rose-300">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-400/15 text-orange-300">
                           {i + 1}
                         </span>
                         <span className="text-cyan-400">{u}</span>
                         <span className="text-white/25">{">"}</span>
                         <span className="text-teal-400">{v}</span>
-                        <span className="ml-auto text-amber-400/80">w={w}</span>
+                        <span className="ml-auto text-amber-400/80">w={typeof w === "number" ? w.toFixed(2) : w}</span>
                       </motion.div>
                     ))}
                   </div>
                 </div>
 
                 <p className="text-xs text-white/40">
-                  Heuristic ini mencoba semua node sebagai start, lalu memilih tour nearest-neighbor dengan total bobot paling kecil.
+                  GRASP (Greedy Randomized Adaptive Search Procedure) membangun solusi awal secara greedy-random, lalu diperbaiki dengan 2-opt Swap.
                 </p>
               </>
             ) : (
@@ -821,72 +972,9 @@ export default function Home() {
                   <span className="font-semibold">Tour TSP tidak ditemukan</span>
                 </div>
                 <p className="text-sm text-white/45">
-                  Graph ini belum membentuk Hamiltonian cycle yang valid untuk heuristic ini. Coba lengkapi edge antar node atau gunakan file weighted yang lebih rapat.
-                </p>
-                <p className="text-xs text-white/35">
-                  Valid start: {(result.validStarts as number) ?? 0} dari {(result.attemptedStarts as number) ?? numVertices}
-                </p>
-              </div>
-            )}
-          </div>
-        );
-
-      case "tsp_recursive_exact":
-        return (
-          <div className="space-y-3">
-            {result.feasible ? (
-              <>
-                <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Total Cost</p>
-                  <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{tspTotalCost ?? 0}</p>
-                </div>
-
-                <div className="glass border border-orange-400/20 p-4">
-                  <p className="mb-3 text-sm font-semibold text-orange-300">Jalur hasil TSP exact</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {tspTour.map((node: number, i: number) => (
-                      <span key={`${node}-${i}`} className="flex items-center gap-1.5">
-                        <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-orange-400/30 bg-orange-400/15 px-2 text-sm font-mono font-semibold text-orange-200">
-                          {node}
-                        </span>
-                        {i < tspTour.length - 1 && (
-                          <span className="text-orange-300/70">{">"}</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Urutan jalur hasil TSP</p>
-                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
-                    {tspTourEdges.map(([u, v, w], i) => (
-                      <div
-                        key={`${u}-${v}-${i}`}
-                        className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono"
-                      >
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-400/15 text-orange-300">
-                          {i + 1}
-                        </span>
-                        <span className="text-cyan-400">{u}</span>
-                        <span className="text-white/25">{">"}</span>
-                        <span className="text-teal-400">{v}</span>
-                        <span className="ml-auto text-amber-400/80">w={w}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-amber-400">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 3c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
-                  </svg>
-                  <span className="font-semibold">Tour TSP exact tidak ditemukan</span>
-                </div>
-                <p className="text-sm text-white/45">
-                  Graph ini tidak memiliki Hamiltonian cycle yang valid jika start dipatok dari node 0.
+                  {tspMode === "coordinate"
+                    ? "Tidak dapat membentuk tour dari koordinat yang diberikan. Pastikan minimal ada 2 node."
+                    : "Graph ini belum membentuk Hamiltonian cycle yang valid. Coba lengkapi edge antar node."}
                 </p>
               </div>
             )}
@@ -1149,10 +1237,196 @@ export default function Home() {
         <div className="lg:col-span-2 space-y-4">
           {isGraphOp ? (
             <>
-              <GraphInput
-                onGraphChange={handleGraphChange}
-                onFileLoaded={handleFileLoaded}
-              />
+              {activeTab === "tsp_grasp_swap" && (
+                <div className="glass p-4">
+                  <label className="block text-xs text-white/50 uppercase tracking-wider mb-2">TSP Input Mode</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setTspMode("edge")}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        tspMode === "edge"
+                          ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300"
+                          : "glass-btn text-white/50 hover:text-white/80"
+                      }`}
+                    >
+                      Edge List
+                    </button>
+                    <button
+                      onClick={() => setTspMode("coordinate")}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        tspMode === "coordinate"
+                          ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300"
+                          : "glass-btn text-white/50 hover:text-white/80"
+                      }`}
+                    >
+                      Koordinat
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? (
+                <div className="glass p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-white/90">Koordinat Node</h3>
+                    <span className="text-xs text-white/40 font-mono bg-white/[0.05] px-2 py-1 rounded">
+                      {coordinates.length} node
+                    </span>
+                  </div>
+
+                  {/* Coordinate Preset */}
+                  <div className="space-y-2">
+                    <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Graf</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={coordPreset}
+                        onChange={(e) => setCoordPreset(e.target.value)}
+                        className="glass-input flex-1 text-sm text-white/80"
+                      >
+                        <option value="">Pilih preset...</option>
+                        <option value="complete">Graf Lengkap Kn</option>
+                        <option value="completeBipartite">Graf Bipartit K(m,n)</option>
+                        <option value="cycle">Siklus Cn</option>
+                        <option value="path">Lintasan Pn</option>
+                        <option value="wheel">Graf Roda Wn</option>
+                        <option value="prism">Graf Prisma</option>
+                        <option value="petersen">Petersen Graph</option>
+                        <option value="generalizedPetersen">Generalized Petersen P(n,k)</option>
+                        <option value="circulant">Circulant Cn(a1,a2)</option>
+                        <option value="hypercube">Hypercube H(n)</option>
+                        <option value="grid">Grid G(m,n)</option>
+                      </select>
+                    </div>
+                    {coordPreset && (
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {(coordPreset === "complete" || coordPreset === "cycle" || coordPreset === "path" || coordPreset === "wheel" || coordPreset === "prism" || coordPreset === "circulant") && (
+                          <input type="number" min={2} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                        )}
+                        {coordPreset === "completeBipartite" && (
+                          <>
+                            <input type="number" min={1} value={coordM} onChange={(e) => setCoordM(parseInt(e.target.value) || 1)} placeholder="m" className="glass-input w-16 text-center font-mono text-sm" />
+                            <input type="number" min={1} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 1)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                          </>
+                        )}
+                        {coordPreset === "generalizedPetersen" && (
+                          <>
+                            <input type="number" min={3} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                            <input type="number" min={1} value={coordK} onChange={(e) => setCoordK(parseInt(e.target.value) || 1)} placeholder="k" className="glass-input w-16 text-center font-mono text-sm" />
+                          </>
+                        )}
+                        {coordPreset === "circulant" && (
+                          <>
+                            <input type="number" min={3} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                            <input type="number" min={1} value={coordA1} onChange={(e) => setCoordA1(parseInt(e.target.value) || 1)} placeholder="a1" className="glass-input w-16 text-center font-mono text-sm" />
+                            <input type="number" min={1} value={coordA2} onChange={(e) => setCoordA2(parseInt(e.target.value) || 1)} placeholder="a2" className="glass-input w-16 text-center font-mono text-sm" />
+                          </>
+                        )}
+                        {coordPreset === "hypercube" && (
+                          <input type="number" min={1} max={6} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 1)} placeholder="dim" className="glass-input w-16 text-center font-mono text-sm" />
+                        )}
+                        {coordPreset === "grid" && (
+                          <>
+                            <input type="number" min={2} value={coordM} onChange={(e) => setCoordM(parseInt(e.target.value) || 2)} placeholder="m (baris)" className="glass-input w-16 text-center font-mono text-sm" />
+                            <input type="number" min={2} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 2)} placeholder="n (kolom)" className="glass-input w-16 text-center font-mono text-sm" />
+                          </>
+                        )}
+                        <button onClick={generateCoordPreset} className="glass-btn px-3 py-1.5 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15">
+                          Generate
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Table Header */}
+                  <div className="grid grid-cols-[2.5rem_1fr_1fr_2rem] gap-2 text-[10px] uppercase tracking-wider text-white/30 px-1">
+                    <span>Node</span>
+                    <span className="text-center">X</span>
+                    <span className="text-center">Y</span>
+                    <span></span>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                    {coordinates.map((coord, idx) => (
+                      <div
+                        key={idx}
+                        className="grid grid-cols-[2.5rem_1fr_1fr_2rem] gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg px-1 py-1.5 transition-colors"
+                      >
+                        <span className="text-xs font-mono text-white/50 text-center">{idx}</span>
+                        <input
+                          type="number"
+                          step="any"
+                          inputMode="decimal"
+                          value={coord.x}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newCoords = [...coordinates];
+                            newCoords[idx] = { ...newCoords[idx], x: val === "" ? 0 : parseFloat(val) };
+                            setCoordinates(newCoords);
+                          }}
+                          className="glass-input w-full text-center text-sm font-mono py-1.5"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          inputMode="decimal"
+                          value={coord.y}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newCoords = [...coordinates];
+                            newCoords[idx] = { ...newCoords[idx], y: val === "" ? 0 : parseFloat(val) };
+                            setCoordinates(newCoords);
+                          }}
+                          className="glass-input w-full text-center text-sm font-mono py-1.5"
+                        />
+                        <button
+                          onClick={() => { setCoordinates(coordinates.filter((_, i) => i !== idx)); setCoordStructEdges([]); }}
+                          className="flex items-center justify-center text-red-400/40 hover:text-red-400 transition-colors"
+                          title="Hapus node"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => { setCoordinates([...coordinates, { x: 0, y: 0 }]); setCoordStructEdges([]); }}
+                      className="flex-1 glass-btn px-3 py-2 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15 flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Tambah Node
+                    </button>
+                    <button
+                      onClick={() => {
+                        const n = coordinates.length;
+                        const newCoords = Array.from({ length: Math.max(3, n) }, (_, i) => ({
+                          x: Math.round(Math.cos((2 * Math.PI * i) / Math.max(3, n)) * 100 * 100) / 100,
+                          y: Math.round(Math.sin((2 * Math.PI * i) / Math.max(3, n)) * 100 * 100) / 100,
+                        }));
+                        setCoordinates(newCoords);
+                      }}
+                      className="flex-1 glass-btn px-3 py-2 rounded-lg text-purple-400 text-xs font-semibold hover:bg-purple-400/15 flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Reset Lingkaran
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <GraphInput
+                  onGraphChange={handleGraphChange}
+                  onFileLoaded={handleFileLoaded}
+                />
+              )}
 
               {needsWeightedHint && (
                 <div className="glass border border-amber-400/15 p-4">
@@ -1162,14 +1436,9 @@ export default function Home() {
                       ? "Graf saat ini sudah memiliki bobot dan siap dipakai untuk shortest path, MST, dan TSP."
                       : "Belum ada bobot eksplisit pada edge. Sistem akan memperlakukan semua edge sebagai bobot 1."}
                   </p>
-                  {activeTab === "tsp_repeated_nn" && (
+                  {activeTab === "tsp_grasp_swap" && tspMode === "edge" && (
                     <p className="mt-2 text-xs text-white/40">
-                      TSP paling informatif jika graph cukup rapat dan berbobot. Upload file weighted juga langsung didukung.
-                    </p>
-                  )}
-                  {activeTab === "tsp_recursive_exact" && (
-                    <p className="mt-2 text-xs text-white/40">
-                      Mode exact memakai backtracking rekursif dari start node yang kamu pilih, jadi akurat tetapi jauh lebih lambat pada jumlah node yang lebih besar.
+                      TSP edge-list mode: bobot diambil dari edge yang diinput. Jika tidak ada bobot, default = 1.
                     </p>
                   )}
                 </div>
@@ -1182,9 +1451,25 @@ export default function Home() {
                   <input
                     type="number"
                     min={0}
-                    max={numVertices - 1}
+                    max={
+                      activeTab === "tsp_grasp_swap" && tspMode === "coordinate"
+                        ? coordinates.length - 1
+                        : numVertices - 1
+                    }
                     value={startNode}
-                    onChange={(e) => setStartNode(Math.max(0, Math.min(parseInt(e.target.value) || 0, numVertices - 1)))}
+                    onChange={(e) =>
+                      setStartNode(
+                        Math.max(
+                          0,
+                          Math.min(
+                            parseInt(e.target.value) || 0,
+                            activeTab === "tsp_grasp_swap" && tspMode === "coordinate"
+                              ? coordinates.length - 1
+                              : numVertices - 1
+                          )
+                        )
+                      )
+                    }
                     className="glass-input w-full"
                   />
                 </div>
@@ -1245,11 +1530,11 @@ export default function Home() {
             )}
           </button>
 
-          {(activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact") && (
+          {activeTab === "tsp_grasp_swap" && (
             <div className="rounded-xl border border-rose-400/15 bg-rose-400/8 px-4 py-3 text-sm text-white/55">
-              {activeTab === "tsp_repeated_nn"
-                ? "Repeated nearest neighbor mencoba semua node sebagai start. Untuk menjaga visualisasi tetap responsif, backend membatasi TSP ke maksimum 14 node."
-                : "TSP exact rekursif mengeksplor banyak kemungkinan jalur. Backend membatasi mode ini ke maksimum 11 node agar tetap aman dijalankan."}
+              {tspMode === "coordinate"
+                ? "TSP koordinat mode: jarak dihitung dari Euclidean distance antar titik. Backend membatasi maksimum 50 node."
+                : "GRASP + 2-Opt Swap membangun tour heuristic. Backend membatasi TSP edge mode ke maksimum 50 node."}
             </div>
           )}
         </div>
@@ -1259,8 +1544,8 @@ export default function Home() {
           {/* Graph Visualizer (for graph operations) */}
           {isGraphOp && (
             <GraphVisualizer
-              numVertices={numVertices}
-              edges={edges}
+              numVertices={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates.length : numVertices}
+              edges={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordDisplayEdges : edges}
               highlightNodes={highlightNodes}
               highlightEdges={highlightEdges}
               componentColors={componentColors.size > 0 ? componentColors : undefined}
@@ -1272,6 +1557,7 @@ export default function Home() {
               tspTourNodes={tspTour}
               tspTourEdges={tspTourEdges}
               tspStartNode={tspStartNode}
+              nodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates : undefined}
             />
           )}
 

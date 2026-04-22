@@ -3,12 +3,15 @@ import path from "path";
 
 export interface GraphRequest {
   operation: string;
+  mode?: "edge" | "coordinate";
   numVertices?: number;
   edges?: number[][];
+  coordinates?: { x: number; y: number }[];
   startNode?: number;
   nodeA?: number;
   nodeB?: number;
   grid?: string[];
+  timeLimitMs?: number;
 }
 
 export interface GraphResponse {
@@ -42,17 +45,6 @@ export interface GraphResponse {
   totalCost?: number;
   tour?: number[];
   tourEdges?: number[][];
-  visitedCount?: number;
-  attemptedStarts?: number;
-  validStarts?: number;
-  recursiveSteps?: number;
-  replaySteps?: {
-    type: string;
-    path: number[];
-    currentCost: number;
-    bestCost: number;
-    nextNode: number;
-  }[];
 }
 
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {
