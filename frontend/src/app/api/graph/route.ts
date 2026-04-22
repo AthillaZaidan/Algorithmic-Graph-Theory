@@ -5,7 +5,7 @@ const VALID_OPERATIONS = [
   "dfs", "bfs", "check_path", "check_connectivity",
   "count_components", "largest_component", "count_islands",
   "check_bipartite", "check_cycle", "diameter", "girth",
-  "shortest_path", "min_spanning_tree", "tsp_repeated_nn", "tsp_recursive_exact"
+  "shortest_path", "min_spanning_tree", "tsp_grasp_swap"
 ];
 
 export async function POST(request: NextRequest) {
@@ -19,10 +19,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (body.operation !== "count_islands") {
-      if (typeof body.numVertices !== "number" || body.numVertices < 0 || body.numVertices > 500) {
+    const skipNumVerticesCheck =
+      body.operation === "count_islands" ||
+      (body.operation === "tsp_grasp_swap" && body.mode === "coordinate");
+
+    if (!skipNumVerticesCheck) {
+      if (typeof body.numVertices !== "number" || body.numVertices < 0 || body.numVertices > 1024) {
         return NextResponse.json(
-          { success: false, error: "numVertices must be a number between 0 and 500" },
+          { success: false, error: "numVertices must be a number between 0 and 1024" },
           { status: 400 }
         );
       }

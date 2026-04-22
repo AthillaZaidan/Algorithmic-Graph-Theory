@@ -9,7 +9,7 @@ interface GraphInputProps {
   maxNodes?: number;
 }
 
-export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 20 }: GraphInputProps) {
+export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 1024 }: GraphInputProps) {
   const [numVertices, setNumVertices] = useState(5);
   const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
 
@@ -19,6 +19,14 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 20 
   const [error, setError] = useState("");
   const [edgeWeight, setEdgeWeight] = useState("");
   const [isWeighted, setIsWeighted] = useState(false);
+
+  // Graph class generator state
+  const [graphClass, setGraphClass] = useState("");
+  const [genParamN, setGenParamN] = useState(5);
+  const [genParamM, setGenParamM] = useState(3);
+  const [genParamK, setGenParamK] = useState(2);
+  const [genParamA1, setGenParamA1] = useState(1);
+  const [genParamA2, setGenParamA2] = useState(2);
 
   const emitChange = useCallback(
     (nv: number, e: number[][]) => {
@@ -164,6 +172,130 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 20 
     }
   };
 
+  // --- Graph Class Generators ---
+  const generateGraphClass = () => {
+    setError("");
+    let nv = 0;
+    const newEdges: number[][] = [];
+    const edgeSet = new Set<string>();
+    const add = (u: number, v: number) => {
+      if (u === v) return;
+      const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        newEdges.push([u, v]);
+      }
+    };
+
+    switch (graphClass) {
+      case "complete":
+        nv = Math.max(1, Math.min(genParamN, maxNodes));
+        for (let i = 0; i < nv; i++) for (let j = i + 1; j < nv; j++) add(i, j);
+        break;
+      case "completeBipartite": {
+        const m = Math.max(1, genParamM);
+        const n = Math.max(1, genParamN);
+        nv = m + n;
+        if (nv > maxNodes) { setError(`Total node ${nv} melebihi batas ${maxNodes}`); return; }
+        for (let i = 0; i < m; i++) for (let j = m; j < nv; j++) add(i, j);
+        break;
+      }
+      case "tree":
+        nv = Math.max(1, Math.min(genParamN, maxNodes));
+        for (let i = 1; i < nv; i++) add(i, Math.floor(Math.random() * i));
+        break;
+      case "cycle":
+        nv = Math.max(3, Math.min(genParamN, maxNodes));
+        for (let i = 0; i < nv; i++) add(i, (i + 1) % nv);
+        break;
+      case "path":
+        nv = Math.max(2, Math.min(genParamN, maxNodes));
+        for (let i = 0; i < nv - 1; i++) add(i, i + 1);
+        break;
+      case "wheel":
+        nv = Math.max(4, Math.min(genParamN, maxNodes));
+        for (let i = 1; i < nv; i++) add(0, i);
+        for (let i = 1; i < nv; i++) add(i, ((i % (nv - 1)) + 1));
+        break;
+      case "prism": {
+        const n = Math.max(3, Math.min(genParamN, Math.floor(maxNodes / 2)));
+        nv = n * 2;
+        for (let i = 0; i < n; i++) {
+          add(i, (i + 1) % n);
+          add(i + n, ((i + 1) % n) + n);
+          add(i, i + n);
+        }
+        break;
+      }
+      case "petersen":
+        nv = 10;
+        for (let i = 0; i < 5; i++) {
+          add(i, (i + 1) % 5);
+          add(i, i + 5);
+          add(i + 5, ((i + 2) % 5) + 5);
+        }
+        break;
+      case "generalizedPetersen": {
+        const n = Math.max(3, genParamN);
+        const k = Math.max(1, genParamK % n);
+        nv = n * 2;
+        if (nv > maxNodes) { setError(`Total node ${nv} melebihi batas ${maxNodes}`); return; }
+        for (let i = 0; i < n; i++) {
+          add(i, (i + 1) % n);
+          add(i, i + n);
+          add(i + n, ((i + k) % n) + n);
+        }
+        break;
+      }
+      case "circulant": {
+        const n = Math.max(3, genParamN);
+        const a1 = Math.max(1, genParamA1 % n);
+        const a2 = Math.max(1, genParamA2 % n);
+        nv = n;
+        if (nv > maxNodes) { setError(`Total node ${nv} melebihi batas ${maxNodes}`); return; }
+        for (let i = 0; i < n; i++) {
+          add(i, (i + a1) % n);
+          add(i, (i + a2) % n);
+        }
+        break;
+      }
+      case "hypercube": {
+        const dim = Math.max(1, Math.min(genParamN, 10));
+        nv = 1 << dim;
+        if (nv > maxNodes) { setError(`Hypercube H(${dim}) = ${nv} node melebihi batas ${maxNodes}`); return; }
+        for (let i = 0; i < nv; i++) {
+          for (let b = 0; b < dim; b++) {
+            const j = i ^ (1 << b);
+            if (j > i) add(i, j);
+          }
+        }
+        break;
+      }
+      case "grid": {
+        const m = Math.max(2, genParamM);
+        const n = Math.max(2, genParamN);
+        nv = m * n;
+        if (nv > maxNodes) { setError(`Grid ${m}x${n} = ${nv} node melebihi batas ${maxNodes}`); return; }
+        for (let r = 0; r < m; r++) {
+          for (let c = 0; c < n; c++) {
+            const idx = r * n + c;
+            if (c + 1 < n) add(idx, idx + 1);
+            if (r + 1 < m) add(idx, idx + n);
+          }
+        }
+        break;
+      }
+      default:
+        setError("Pilih kelas graf terlebih dahulu");
+        return;
+    }
+
+    setNumVertices(nv);
+    setEdges(newEdges);
+    setIsWeighted(false);
+    emitChange(nv, newEdges);
+  };
+
   return (
     <div className="glass p-5 space-y-4">
       <h3 className="text-lg font-semibold text-white/90 flex items-center gap-2">
@@ -175,6 +307,80 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 20 
         </svg>
         Graph Input
       </h3>
+
+      {/* Generate Graph Class */}
+      <div className="space-y-2">
+        <label className="block text-xs text-white/50 uppercase tracking-wider">Generate Graph Class</label>
+        <select
+          value={graphClass}
+          onChange={(e) => setGraphClass(e.target.value)}
+          className="glass-input w-full text-sm text-white/80"
+        >
+          <option value="">Pilih kelas graf...</option>
+          <option value="complete">Graf Lengkap Kn</option>
+          <option value="completeBipartite">Graf Bipartit Lengkap K(m,n)</option>
+          <option value="tree">Pohon Tn</option>
+          <option value="cycle">Siklus Cn</option>
+          <option value="path">Lintasan Pn</option>
+          <option value="wheel">Graf Roda Wn</option>
+          <option value="prism">Graf Prisma</option>
+          <option value="petersen">Petersen Graph</option>
+          <option value="generalizedPetersen">Generalized Petersen P(n,k)</option>
+          <option value="circulant">Circulant Cn(a1,a2)</option>
+          <option value="hypercube">Hypercubes H(n)</option>
+          <option value="grid">Grid Graph G(m,n)</option>
+        </select>
+
+        {graphClass && (
+          <div className="flex flex-wrap gap-2 items-center">
+            {(graphClass === "complete" || graphClass === "tree" || graphClass === "cycle" || graphClass === "path" || graphClass === "wheel" || graphClass === "prism" || graphClass === "circulant") && (
+              <input
+                type="number"
+                min={1}
+                max={maxNodes}
+                value={genParamN}
+                onChange={(e) => setGenParamN(parseInt(e.target.value) || 1)}
+                placeholder="n"
+                className="glass-input w-16 text-center font-mono text-sm"
+              />
+            )}
+            {graphClass === "completeBipartite" && (
+              <>
+                <input type="number" min={1} max={maxNodes} value={genParamM} onChange={(e) => setGenParamM(parseInt(e.target.value) || 1)} placeholder="m" className="glass-input w-16 text-center font-mono text-sm" />
+                <input type="number" min={1} max={maxNodes} value={genParamN} onChange={(e) => setGenParamN(parseInt(e.target.value) || 1)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+              </>
+            )}
+            {graphClass === "generalizedPetersen" && (
+              <>
+                <input type="number" min={3} max={maxNodes} value={genParamN} onChange={(e) => setGenParamN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                <input type="number" min={1} max={maxNodes} value={genParamK} onChange={(e) => setGenParamK(parseInt(e.target.value) || 1)} placeholder="k" className="glass-input w-16 text-center font-mono text-sm" />
+              </>
+            )}
+            {graphClass === "circulant" && (
+              <>
+                <input type="number" min={3} max={maxNodes} value={genParamN} onChange={(e) => setGenParamN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+                <input type="number" min={1} max={maxNodes} value={genParamA1} onChange={(e) => setGenParamA1(parseInt(e.target.value) || 1)} placeholder="a1" className="glass-input w-16 text-center font-mono text-sm" />
+                <input type="number" min={1} max={maxNodes} value={genParamA2} onChange={(e) => setGenParamA2(parseInt(e.target.value) || 1)} placeholder="a2" className="glass-input w-16 text-center font-mono text-sm" />
+              </>
+            )}
+            {graphClass === "hypercube" && (
+              <input type="number" min={1} max={10} value={genParamN} onChange={(e) => setGenParamN(parseInt(e.target.value) || 1)} placeholder="dim" className="glass-input w-16 text-center font-mono text-sm" />
+            )}
+            {graphClass === "grid" && (
+              <>
+                <input type="number" min={2} max={maxNodes} value={genParamM} onChange={(e) => setGenParamM(parseInt(e.target.value) || 2)} placeholder="m" className="glass-input w-16 text-center font-mono text-sm" />
+                <input type="number" min={2} max={maxNodes} value={genParamN} onChange={(e) => setGenParamN(parseInt(e.target.value) || 2)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
+              </>
+            )}
+            <button
+              onClick={generateGraphClass}
+              className="glass-btn px-3 py-1.5 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15"
+            >
+              Generate
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Node Controls */}
       <div>

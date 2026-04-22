@@ -21,19 +21,14 @@ interface GraphVisualizerProps {
   tspTourNodes?: number[];
   tspTourEdges?: number[][];
   tspStartNode?: number;
+  nodePositions?: { x: number; y: number }[];
+  showCoordGrid?: boolean;
 }
 
-interface GraphNode {
-  id: number;
-  label: string;
-  x?: number;
-  y?: number;
-}
-
-interface GraphLink {
-  source: number | GraphNode;
-  target: number | GraphNode;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyNode = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyLink = any;
 
 export default function GraphVisualizer({
   numVertices,
@@ -49,6 +44,8 @@ export default function GraphVisualizer({
   tspTourNodes = [],
   tspTourEdges,
   tspStartNode,
+  nodePositions,
+  showCoordGrid,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
@@ -121,26 +118,46 @@ export default function GraphVisualizer({
     return s;
   }, [tspTourEdges]);
 
+  const showGrid = showCoordGrid ?? (nodePositions != null && nodePositions.length > 0);
+
   const graphData = useMemo(() => {
-    const nodes: GraphNode[] = Array.from({ length: numVertices }, (_, i) => ({
-      id: i,
-      label: `${i}`,
-    }));
-    const links: GraphLink[] = edges.map(([source, target]) => ({ source, target }));
+    const nodes: AnyNode[] = Array.from({ length: numVertices }, (_, i) => {
+      const n: AnyNode = { id: i, label: `${i}` };
+      if (nodePositions && i < nodePositions.length) {
+        const pos = nodePositions[i];
+        n.x = pos.x;
+        n.y = pos.y;
+        n.fx = pos.x;
+        n.fy = pos.y;
+      }
+      return n;
+    });
+    const links: AnyLink[] = edges.map(([source, target]) => ({ source, target }));
     return { nodes, links };
-  }, [numVertices, edges]);
+  }, [numVertices, edges, nodePositions]);
+
+  const gridRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!showGrid || !containerRef.current) return;
+    const canvas = gridRef.current;
+    if (!canvas) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = Math.max(rect.height, 350);
+  }, [showGrid, dimensions, numVertices, edges]);
 
   return (
-    <div ref={containerRef} className="glass overflow-hidden" style={{ minHeight: 350 }}>
+    <div ref={containerRef} className="glass overflow-hidden relative" style={{ minHeight: 350 }}>
       {typeof window !== "undefined" && (
         <ForceGraph2D
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeLabel={(node: GraphNode) => `Node ${node.id}`}
+          nodeLabel={(node: AnyNode) => `Node ${node.id}`}
           nodeRelSize={6}
           nodeCanvasObjectMode={() => "replace"}
-          nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D) => {
+          nodeCanvasObject={(node: AnyNode, ctx: CanvasRenderingContext2D) => {
             const id = node.id ?? 0;
             const x = node.x ?? 0;
             const y = node.y ?? 0;
@@ -151,6 +168,68 @@ export default function GraphVisualizer({
             const isGirthNode = girthCycleNodes.includes(id);
             const isTspNode = tspTourNodes.includes(id);
             const isTspStart = tspStartNode === id && isTspNode;
+
+            if (showGrid && id === 0) {
+              ctx.save();
+              ctx.strokeStyle = "rgba(255,255,255,0.06)";
+              ctx.lineWidth = 0.5;
+              const minX = Math.min(...nodePositions!.map(p => p.x)) - 40;
+              const maxX = Math.max(...nodePositions!.map(p => p.x)) + 40;
+              const minY = Math.min(...nodePositions!.map(p => p.y)) - 40;
+              const maxY = Math.max(...nodePositions!.map(p => p.y)) + 40;
+              const originX = 0;
+              const originY = 0;
+              const step = 50;
+
+              const firstNode = nodePositions![0];
+              const ox = firstNode != null ? (node.x ?? 0) - firstNode.x : 0;
+              const oy = firstNode != null ? (node.y ?? 0) - firstNode.y : 0;
+
+              for (let gx = Math.ceil(minX / step) * step; gx <= maxX; gx += step) {
+                const sx = gx + ox;
+                const sy1 = minY + oy;
+                const sy2 = maxY + oy;
+                ctx.beginPath();
+                ctx.moveTo(sx, sy1);
+                ctx.lineTo(sx, sy2);
+                ctx.stroke();
+              }
+              for (let gy = Math.ceil(minY / step) * step; gy <= maxY; gy += step) {
+                const sx1 = minX + ox;
+                const sx2 = maxX + ox;
+                ctx.beginPath();
+                ctx.moveTo(sx1, gy + oy);
+                ctx.lineTo(sx2, gy + oy);
+                ctx.stroke();
+              }
+
+              ctx.strokeStyle = "rgba(255,255,255,0.2)";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(originX + ox, minY + oy);
+              ctx.lineTo(originX + ox, maxY + oy);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(minX + ox, originY + oy);
+              ctx.lineTo(maxX + ox, originY + oy);
+              ctx.stroke();
+
+              ctx.font = "9px monospace";
+              ctx.fillStyle = "rgba(255,255,255,0.35)";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "top";
+              for (let gx = Math.ceil(minX / step) * step; gx <= maxX; gx += step) {
+                if (gx === 0) continue;
+                ctx.fillText(`${gx}`, gx + ox, originY + oy + 4);
+              }
+              ctx.textAlign = "right";
+              ctx.textBaseline = "middle";
+              for (let gy = Math.ceil(minY / step) * step; gy <= maxY; gy += step) {
+                if (gy === 0) continue;
+                ctx.fillText(`${gy}`, originX + ox - 4, gy + oy);
+              }
+              ctx.restore();
+            }
 
             let baseColor = "rgba(255,255,255,0.6)";
             if (hasBipartiteColor) {
@@ -194,7 +273,7 @@ export default function GraphVisualizer({
             ctx.fillStyle = isHighlighted || hasCompColor || hasBipartiteColor || isTspNode ? "#ffffff" : "rgba(255,255,255,0.95)";
             ctx.fillText(`${id}`, x, y);
           }}
-          linkCanvasObject={(link: GraphLink, ctx: CanvasRenderingContext2D) => {
+          linkCanvasObject={(link: AnyLink, ctx: CanvasRenderingContext2D) => {
             const src = typeof link.source === "object" ? link.source : undefined;
             const tgt = typeof link.target === "object" ? link.target : undefined;
             if (!src || !tgt || src.x == null || src.y == null || tgt.x == null || tgt.y == null) return;
@@ -281,7 +360,8 @@ export default function GraphVisualizer({
           }}
           linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"
-          cooldownTime={2000}
+          cooldownTime={nodePositions ? 0 : 2000}
+          enableNodeDrag={!nodePositions}
           enableZoomInteraction
           enablePanInteraction
         />
