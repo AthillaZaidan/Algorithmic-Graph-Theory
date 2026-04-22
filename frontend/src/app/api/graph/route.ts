@@ -5,7 +5,7 @@ const VALID_OPERATIONS = [
   "dfs", "bfs", "check_path", "check_connectivity",
   "count_components", "largest_component", "count_islands",
   "check_bipartite", "check_cycle", "diameter", "girth",
-  "shortest_path", "min_spanning_tree"
+  "shortest_path", "min_spanning_tree", "tsp_repeated_nn", "tsp_recursive_exact"
 ];
 
 export async function POST(request: NextRequest) {
