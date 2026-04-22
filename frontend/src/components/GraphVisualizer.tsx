@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -18,6 +18,21 @@ interface GraphVisualizerProps {
   diameterPathNodes?: number[];
   girthCycleNodes?: number[];
   mstEdges?: number[][];
+  tspTourNodes?: number[];
+  tspTourEdges?: number[][];
+  tspStartNode?: number;
+}
+
+interface GraphNode {
+  id: number;
+  label: string;
+  x?: number;
+  y?: number;
+}
+
+interface GraphLink {
+  source: number | GraphNode;
+  target: number | GraphNode;
 }
 
 export default function GraphVisualizer({
@@ -31,18 +46,17 @@ export default function GraphVisualizer({
   diameterPathNodes = [],
   girthCycleNodes = [],
   mstEdges,
+  tspTourNodes = [],
+  tspTourEdges,
+  tspStartNode,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
-
-  // Keep stable node references so adding/removing doesn't reset layout
-  const nodesRef = useRef<any[]>([]);
-  const prevVerticesRef = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
     const obs = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setDimensions({
@@ -51,14 +65,12 @@ export default function GraphVisualizer({
         });
       }
     });
+
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
-  const highlightNodeSet = useMemo(
-    () => new Set(highlightNodes),
-    [highlightNodes]
-  );
+  const highlightNodeSet = useMemo(() => new Set(highlightNodes), [highlightNodes]);
 
   const highlightEdgeSet = useMemo(() => {
     const s = new Set<string>();
@@ -93,35 +105,29 @@ export default function GraphVisualizer({
 
   const mstEdgeSet = useMemo(() => {
     const s = new Set<string>();
-    for (const e of (mstEdges ?? [])) {
+    for (const e of mstEdges ?? []) {
       s.add(`${e[0]}-${e[1]}`);
       s.add(`${e[1]}-${e[0]}`);
     }
     return s;
   }, [mstEdges]);
 
-  // Incrementally update nodes to keep existing positions stable
-  const graphData = useMemo(() => {
-    const prev = nodesRef.current;
-    const prevN = prevVerticesRef.current;
-
-    if (numVertices > prevN) {
-      // Only add new nodes — keep existing ones with their positions
-      const newNodes = [...prev];
-      for (let i = prevN; i < numVertices; i++) {
-        newNodes.push({ id: i, label: `${i}` });
-      }
-      nodesRef.current = newNodes;
-    } else if (numVertices < prevN) {
-      // Trim removed nodes
-      nodesRef.current = prev.slice(0, numVertices);
+  const tspEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of tspTourEdges ?? []) {
+      s.add(`${e[0]}-${e[1]}`);
+      s.add(`${e[1]}-${e[0]}`);
     }
-    // else same count — keep as-is
+    return s;
+  }, [tspTourEdges]);
 
-    prevVerticesRef.current = numVertices;
-
-    const links = edges.map(([source, target]) => ({ source, target }));
-    return { nodes: nodesRef.current, links };
+  const graphData = useMemo(() => {
+    const nodes: GraphNode[] = Array.from({ length: numVertices }, (_, i) => ({
+      id: i,
+      label: `${i}`,
+    }));
+    const links: GraphLink[] = edges.map(([source, target]) => ({ source, target }));
+    return { nodes, links };
   }, [numVertices, edges]);
 
   return (
@@ -131,113 +137,124 @@ export default function GraphVisualizer({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeLabel={(node: any) => `Node ${node.id}`}
+          nodeLabel={(node: GraphNode) => `Node ${node.id}`}
           nodeRelSize={6}
           nodeCanvasObjectMode={() => "replace"}
-          nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D) => {
+          nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D) => {
             const id = node.id ?? 0;
             const x = node.x ?? 0;
             const y = node.y ?? 0;
             const isHighlighted = highlightNodeSet.has(id);
-            const hasCompColor = componentColors && componentColors.has(id);
-            const hasBipartiteColor = bipartiteColors && bipartiteColors.has(id);
+            const hasCompColor = componentColors?.has(id) ?? false;
+            const hasBipartiteColor = bipartiteColors?.has(id) ?? false;
             const isCyclePath = cyclePathNodes.includes(id);
             const isGirthNode = girthCycleNodes.includes(id);
+            const isTspNode = tspTourNodes.includes(id);
+            const isTspStart = tspStartNode === id && isTspNode;
 
-            let baseColor: string;
+            let baseColor = "rgba(255,255,255,0.6)";
             if (hasBipartiteColor) {
               baseColor = bipartiteColors!.get(id)!;
+            } else if (isTspStart) {
+              baseColor = "#f97316";
+            } else if (isTspNode) {
+              baseColor = "#fb7185";
             } else if (hasCompColor) {
               baseColor = componentColors!.get(id)!;
             } else if (isGirthNode) {
-              baseColor = "#ec4899"; // pink for girth
+              baseColor = "#ec4899";
             } else if (isHighlighted) {
               baseColor = "#22d3ee";
-            } else {
-              baseColor = "rgba(255,255,255,0.6)";
             }
 
-            const radius = isHighlighted || isCyclePath || isGirthNode ? 10 : 7;
+            const radius = isTspNode ? 8.2 : isHighlighted || isCyclePath || isGirthNode ? 9 : 7;
 
-            // Glow effect for highlighted nodes
-            if (isHighlighted || hasCompColor || hasBipartiteColor || isCyclePath || isGirthNode) {
+            if (isHighlighted || hasCompColor || hasBipartiteColor || isCyclePath || isGirthNode || isTspNode) {
               ctx.beginPath();
-              ctx.arc(x, y, radius + 6, 0, 2 * Math.PI);
-              ctx.fillStyle = baseColor + "30";
+              ctx.arc(x, y, radius + (isTspNode ? 4 : 5), 0, 2 * Math.PI);
+              ctx.fillStyle = isTspNode ? `${baseColor}20` : `${baseColor}30`;
               ctx.fill();
             }
 
-            // Node circle
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
             ctx.fillStyle = baseColor;
             ctx.fill();
-            ctx.strokeStyle = isCyclePath ? "rgba(251,191,36,0.8)" : "rgba(255,255,255,0.4)";
-            ctx.lineWidth = isCyclePath ? 3 : 1.5;
+            ctx.strokeStyle = isTspStart
+              ? "rgba(255,237,213,0.95)"
+              : isCyclePath
+              ? "rgba(251,191,36,0.8)"
+              : "rgba(255,255,255,0.4)";
+            ctx.lineWidth = isTspStart ? 2.2 : isCyclePath ? 2.5 : 1.2;
             ctx.stroke();
 
-            // Bold label
-            ctx.font = `bold ${isHighlighted || isCyclePath ? "7px" : "6px"} sans-serif`;
+            ctx.font = `bold ${isHighlighted || isCyclePath || isTspNode ? "7px" : "6px"} sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = isHighlighted || hasCompColor || hasBipartiteColor ? "#ffffff" : "rgba(255,255,255,0.95)";
+            ctx.fillStyle = isHighlighted || hasCompColor || hasBipartiteColor || isTspNode ? "#ffffff" : "rgba(255,255,255,0.95)";
             ctx.fillText(`${id}`, x, y);
           }}
-          linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D) => {
-            const src = link.source as { id?: number; x?: number; y?: number };
-            const tgt = link.target as { id?: number; x?: number; y?: number };
-            if (!src || !tgt || src.x == null || tgt.x == null) return;
+          linkCanvasObject={(link: GraphLink, ctx: CanvasRenderingContext2D) => {
+            const src = typeof link.source === "object" ? link.source : undefined;
+            const tgt = typeof link.target === "object" ? link.target : undefined;
+            if (!src || !tgt || src.x == null || src.y == null || tgt.x == null || tgt.y == null) return;
 
             const sourceId = src.id ?? 0;
             const targetId = tgt.id ?? 0;
             const key = `${sourceId}-${targetId}`;
             const isDia = diameterEdgeSet.has(key);
             const isGirth = girthEdgeSet.has(key);
-            const isHL = highlightEdgeSet.has(key);
+            const isHighlighted = highlightEdgeSet.has(key);
             const isMst = mstEdgeSet.has(key);
+            const isTsp = tspEdgeSet.has(key);
 
             ctx.beginPath();
-            ctx.moveTo(src.x, src.y!);
-            ctx.lineTo(tgt.x, tgt.y!);
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(tgt.x, tgt.y);
 
-            if (isGirth) {
-              // girth cycle edge appears pink
+            if (isTsp) {
+              ctx.strokeStyle = "rgba(251,113,133,0.12)";
+              ctx.lineWidth = 4.5;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
+              ctx.strokeStyle = "#fb7185";
+              ctx.lineWidth = 2.2;
+            } else if (isGirth) {
               ctx.strokeStyle = "rgba(236,72,153,0.15)";
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y!);
-              ctx.lineTo(tgt.x, tgt.y!);
-              ctx.strokeStyle = "#ec4899"; // pink
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
+              ctx.strokeStyle = "#ec4899";
               ctx.lineWidth = 3;
             } else if (isDia) {
-              // diameter path appears green
-              ctx.strokeStyle = "rgba(34,211,238,0.15)"; // light glow
+              ctx.strokeStyle = "rgba(34,211,238,0.15)";
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y!);
-              ctx.lineTo(tgt.x, tgt.y!);
-              ctx.strokeStyle = "#4ade80"; // green
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
+              ctx.strokeStyle = "#4ade80";
               ctx.lineWidth = 3;
             } else if (isMst) {
-              // MST edge appears amber
               ctx.strokeStyle = "rgba(245,158,11,0.2)";
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y!);
-              ctx.lineTo(tgt.x, tgt.y!);
-              ctx.strokeStyle = "#f59e0b"; // amber
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
+              ctx.strokeStyle = "#f59e0b";
               ctx.lineWidth = 2.5;
-            } else if (isHL) {
-              // Glow for highlighted edges
+            } else if (isHighlighted) {
               ctx.strokeStyle = "rgba(34,211,238,0.25)";
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y!);
-              ctx.lineTo(tgt.x, tgt.y!);
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
               ctx.strokeStyle = "#22d3ee";
               ctx.lineWidth = 3;
             } else {
@@ -246,16 +263,15 @@ export default function GraphVisualizer({
             }
             ctx.stroke();
 
-            // Draw weight label if edge has a weight
-            const edge = (edges || []).find((e) =>
-              (e[0] === sourceId && e[1] === targetId) ||
-              (e[1] === sourceId && e[0] === targetId)
+            const edge = edges.find(
+              (e) => (e[0] === sourceId && e[1] === targetId) || (e[1] === sourceId && e[0] === targetId)
             );
-            if (edge && edge[2] !== undefined) {
-              const midX = (src.x + tgt.x!) / 2;
-              const midY = (src.y! + tgt.y!) / 2;
+            const midX = (src.x + tgt.x) / 2;
+            const midY = (src.y + tgt.y) / 2;
+
+            if (edge?.[2] !== undefined) {
               ctx.save();
-              ctx.font = "4px Sans-Serif";
+              ctx.font = "4px sans-serif";
               ctx.fillStyle = "#f59e0b";
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -266,8 +282,8 @@ export default function GraphVisualizer({
           linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"
           cooldownTime={2000}
-          enableZoomInteraction={true}
-          enablePanInteraction={true}
+          enableZoomInteraction
+          enablePanInteraction
         />
       )}
     </div>

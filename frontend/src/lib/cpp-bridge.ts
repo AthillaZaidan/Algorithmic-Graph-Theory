@@ -37,12 +37,29 @@ export interface GraphResponse {
   distance?: number;
   mstEdges?: number[][];
   totalWeight?: number;
+  feasible?: boolean;
+  startNode?: number;
+  totalCost?: number;
+  tour?: number[];
+  tourEdges?: number[][];
+  visitedCount?: number;
+  attemptedStarts?: number;
+  validStarts?: number;
+  recursiveSteps?: number;
+  replaySteps?: {
+    type: string;
+    path: number[];
+    currentCost: number;
+    bestCost: number;
+    nextNode: number;
+  }[];
 }
 
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {
   return new Promise((resolve, reject) => {
+    const defaultEngineName = process.platform === "win32" ? "graph_engine.exe" : "graph_engine";
     const enginePath = process.env.CPP_ENGINE_PATH ||
-      path.resolve(process.cwd(), "..", "backend", "graph_engine");
+      path.resolve(process.cwd(), "..", "backend", defaultEngineName);
 
     const child = spawn(enginePath, [], {
       stdio: ["pipe", "pipe", "pipe"],

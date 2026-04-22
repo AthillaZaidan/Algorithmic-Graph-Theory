@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { motion } from "framer-motion";
 import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
 import { GraphResponse } from "@/lib/cpp-bridge";
+
+type TspReplayStep = NonNullable<GraphResponse["replaySteps"]>[number];
 
 type Operation =
   | "dfs"
@@ -21,12 +23,14 @@ type Operation =
   | "diameter"
   | "girth"
   | "shortest_path"
-  | "min_spanning_tree";
+  | "min_spanning_tree"
+  | "tsp_repeated_nn"
+  | "tsp_recursive_exact";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3" | "tugas4";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5";
   description: string;
 }
 
@@ -44,6 +48,8 @@ const TABS: TabDef[] = [
   { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf" },
   { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)" },
   { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
+  { id: "tsp_repeated_nn", label: "TSP NN", group: "tugas5", description: "Travelling Salesman Problem heuristic dengan Repeated Nearest Neighbor" },
+  { id: "tsp_recursive_exact", label: "TSP Exact", group: "tugas5", description: "Travelling Salesman Problem exact dengan backtracking rekursif dari start node pilihan user" },
 ];
 
 const COMPONENT_COLORS = [
@@ -78,19 +84,67 @@ export default function Home() {
   const [girthValue, setGirthValue] = useState<number | undefined>();
   const [girthCycle, setGirthCycle] = useState<number[]>([]);
   const [mstEdges, setMstEdges] = useState<number[][]>([]);
-  const [mstTotalWeight, setMstTotalWeight] = useState<number | undefined>();
+  const [, setMstTotalWeight] = useState<number | undefined>();
+  const [tspTour, setTspTour] = useState<number[]>([]);
+  const [tspTourEdges, setTspTourEdges] = useState<number[][]>([]);
+  const [tspTotalCost, setTspTotalCost] = useState<number | undefined>();
+  const [tspStartNode, setTspStartNode] = useState<number | undefined>();
+  const [tspReplaySteps, setTspReplaySteps] = useState<TspReplayStep[]>([]);
+  const [tspReplayIndex, setTspReplayIndex] = useState(0);
+  const [tspReplayPlaying, setTspReplayPlaying] = useState(false);
   const [isWeightedMode, setIsWeightedMode] = useState(false);
 
   const animationRef = useRef<NodeJS.Timeout[]>([]);
+  const replayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearAnimations = () => {
     animationRef.current.forEach(clearTimeout);
     animationRef.current = [];
+    if (replayTimerRef.current) {
+      clearTimeout(replayTimerRef.current);
+      replayTimerRef.current = null;
+    }
   };
+
+  useEffect(() => {
+    if (activeTab !== "tsp_recursive_exact") return;
+    if (!tspReplayPlaying) return;
+    if (tspReplaySteps.length === 0) return;
+    if (tspReplayIndex >= tspReplaySteps.length - 1) {
+      setTspReplayPlaying(false);
+      return;
+    }
+
+    replayTimerRef.current = setTimeout(() => {
+      setTspReplayIndex((prev) => prev + 1);
+    }, 550);
+
+    return () => {
+      if (replayTimerRef.current) {
+        clearTimeout(replayTimerRef.current);
+        replayTimerRef.current = null;
+      }
+    };
+  }, [activeTab, tspReplayPlaying, tspReplayIndex, tspReplaySteps]);
+
+  useEffect(() => {
+    if (activeTab !== "tsp_recursive_exact") return;
+    if (tspReplaySteps.length === 0) return;
+
+    const step = tspReplaySteps[Math.min(tspReplayIndex, tspReplaySteps.length - 1)];
+    const path = step.path ?? [];
+    const stepEdges: number[][] = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      stepEdges.push([path[i], path[i + 1]]);
+    }
+    setHighlightNodes(Array.from(new Set(path)));
+    setHighlightEdges(stepEdges);
+  }, [activeTab, tspReplayIndex, tspReplaySteps]);
 
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
     setNumVertices(nv);
     setEdges(e);
+    setIsWeightedMode(e.some((edge) => edge[2] !== undefined));
   }, []);
 
   const handleFileLoaded = useCallback((nv: number, e: number[][], weighted: boolean) => {
@@ -116,6 +170,10 @@ export default function Home() {
     setGirthCycle([]);
     setMstEdges([]);
     setMstTotalWeight(undefined);
+    setTspTour([]);
+    setTspTourEdges([]);
+    setTspTotalCost(undefined);
+    setTspStartNode(undefined);
     clearAnimations();
 
     const body: Record<string, unknown> = { operation: activeTab };
@@ -125,7 +183,7 @@ export default function Home() {
       body.edges = edges;
     }
 
-    if (activeTab === "dfs" || activeTab === "bfs") {
+    if (activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_recursive_exact") {
       body.startNode = startNode;
     } else if (activeTab === "check_path" || activeTab === "shortest_path") {
       body.nodeA = nodeA;
@@ -261,6 +319,17 @@ export default function Home() {
           setHighlightNodes(Array.from(mstNodes));
           setHighlightEdges(mst.map(([u, v]) => [u, v]));
         }
+      } else if (activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact") {
+        if (data.feasible && data.tour && data.tourEdges) {
+          const tour = data.tour as number[];
+          const tourEdges = data.tourEdges as number[][];
+          setTspTour(tour);
+          setTspTourEdges(tourEdges);
+          setTspTotalCost(data.totalCost as number);
+          setTspStartNode(data.startNode as number);
+          setHighlightNodes(Array.from(new Set(tour)));
+          setHighlightEdges(tourEdges.map(([u, v]) => [u, v]));
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to call API");
@@ -270,8 +339,10 @@ export default function Home() {
   };
 
   const isGraphOp = activeTab !== "count_islands";
-  const needsStart = activeTab === "dfs" || activeTab === "bfs";
+  const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_recursive_exact";
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
+  const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact";
+  const isWeightedGraph = isWeightedMode || edges.some((edge) => edge[2] !== undefined);
 
   const renderResult = () => {
     if (error) {
@@ -668,6 +739,160 @@ export default function Home() {
           </div>
         );
 
+      case "tsp_repeated_nn":
+        return (
+          <div className="space-y-3">
+            {result.feasible ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Best Cost</p>
+                    <p className="mt-1 font-mono text-2xl font-bold text-rose-300">{tspTotalCost ?? 0}</p>
+                  </div>
+                  <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Best Start</p>
+                    <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{result.startNode as number}</p>
+                  </div>
+                  <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Valid Starts</p>
+                    <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">
+                      {(result.validStarts as number) ?? 0}/{(result.attemptedStarts as number) ?? numVertices}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="glass border border-rose-400/20 p-4">
+                  <p className="mb-3 text-sm font-semibold text-rose-300">Best tour found by repeated nearest neighbor</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {tspTour.map((node: number, i: number) => (
+                      <span key={`${node}-${i}`} className="flex items-center gap-1.5">
+                        <span
+                          className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-mono font-semibold ${
+                            i === 0
+                              ? "border-orange-400/40 bg-orange-400/20 text-orange-300"
+                              : i === tspTour.length - 1
+                              ? "border-rose-400/30 bg-rose-400/15 text-rose-200"
+                              : "border-rose-400/30 bg-rose-400/15 text-rose-300"
+                          }`}
+                        >
+                          {node}
+                        </span>
+                        {i < tspTour.length - 1 && (
+                          <span className="text-rose-300/70">{">"}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Tour edges</p>
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                    {tspTourEdges.map(([u, v, w], i) => (
+                      <motion.div
+                        key={`${u}-${v}-${i}`}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.03, duration: 0.18 }}
+                        className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono"
+                      >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-400/15 text-rose-300">
+                          {i + 1}
+                        </span>
+                        <span className="text-cyan-400">{u}</span>
+                        <span className="text-white/25">{">"}</span>
+                        <span className="text-teal-400">{v}</span>
+                        <span className="ml-auto text-amber-400/80">w={w}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-xs text-white/40">
+                  Heuristic ini mencoba semua node sebagai start, lalu memilih tour nearest-neighbor dengan total bobot paling kecil.
+                </p>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 3c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+                  </svg>
+                  <span className="font-semibold">Tour TSP tidak ditemukan</span>
+                </div>
+                <p className="text-sm text-white/45">
+                  Graph ini belum membentuk Hamiltonian cycle yang valid untuk heuristic ini. Coba lengkapi edge antar node atau gunakan file weighted yang lebih rapat.
+                </p>
+                <p className="text-xs text-white/35">
+                  Valid start: {(result.validStarts as number) ?? 0} dari {(result.attemptedStarts as number) ?? numVertices}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+
+      case "tsp_recursive_exact":
+        return (
+          <div className="space-y-3">
+            {result.feasible ? (
+              <>
+                <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Total Cost</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{tspTotalCost ?? 0}</p>
+                </div>
+
+                <div className="glass border border-orange-400/20 p-4">
+                  <p className="mb-3 text-sm font-semibold text-orange-300">Jalur hasil TSP exact</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {tspTour.map((node: number, i: number) => (
+                      <span key={`${node}-${i}`} className="flex items-center gap-1.5">
+                        <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-orange-400/30 bg-orange-400/15 px-2 text-sm font-mono font-semibold text-orange-200">
+                          {node}
+                        </span>
+                        {i < tspTour.length - 1 && (
+                          <span className="text-orange-300/70">{">"}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Urutan jalur hasil TSP</p>
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                    {tspTourEdges.map(([u, v, w], i) => (
+                      <div
+                        key={`${u}-${v}-${i}`}
+                        className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono"
+                      >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-400/15 text-orange-300">
+                          {i + 1}
+                        </span>
+                        <span className="text-cyan-400">{u}</span>
+                        <span className="text-white/25">{">"}</span>
+                        <span className="text-teal-400">{v}</span>
+                        <span className="ml-auto text-amber-400/80">w={w}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 3c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+                  </svg>
+                  <span className="font-semibold">Tour TSP exact tidak ditemukan</span>
+                </div>
+                <p className="text-sm text-white/45">
+                  Graph ini tidak memiliki Hamiltonian cycle yang valid jika start dipatok dari node 0.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+
     }
   };
 
@@ -709,6 +934,10 @@ export default function Home() {
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
                     setCyclePathNodes([]);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -746,6 +975,10 @@ export default function Home() {
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
                     setCyclePathNodes([]);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -787,6 +1020,10 @@ export default function Home() {
                     setDiameterLength(undefined);
                     setGirthValue(undefined);
                     setGirthCycle([]);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -834,11 +1071,62 @@ export default function Home() {
                     setGirthCycle([]);
                     setMstEdges([]);
                     setMstTotalWeight(undefined);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
                     clearAnimations();
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     activeTab === tab.id
                       ? "bg-amber-400/15 border border-amber-400/40 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.12)]"
+                      : "glass-btn text-white/60 hover:text-white/90"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Tugas 5 */}
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.32 }}
+          >
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 5 â€” Routing Heuristic</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TABS.filter((t) => t.group === "tugas5").map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setResult(null);
+                    setError("");
+                    setHighlightNodes([]);
+                    setHighlightEdges([]);
+                    setComponentColors(new Map());
+                    setIslandLabels(undefined);
+                    setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
+                    setDiameterPath([]);
+                    setDiameterLength(undefined);
+                    setGirthValue(undefined);
+                    setGirthCycle([]);
+                    setMstEdges([]);
+                    setMstTotalWeight(undefined);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
+                    clearAnimations();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? "bg-rose-400/15 border border-rose-400/40 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.16)]"
                       : "glass-btn text-white/60 hover:text-white/90"
                   }`}
                 >
@@ -865,6 +1153,27 @@ export default function Home() {
                 onGraphChange={handleGraphChange}
                 onFileLoaded={handleFileLoaded}
               />
+
+              {needsWeightedHint && (
+                <div className="glass border border-amber-400/15 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">Weighted graph mode</p>
+                  <p className="mt-2 text-sm text-white/60">
+                    {isWeightedGraph
+                      ? "Graf saat ini sudah memiliki bobot dan siap dipakai untuk shortest path, MST, dan TSP."
+                      : "Belum ada bobot eksplisit pada edge. Sistem akan memperlakukan semua edge sebagai bobot 1."}
+                  </p>
+                  {activeTab === "tsp_repeated_nn" && (
+                    <p className="mt-2 text-xs text-white/40">
+                      TSP paling informatif jika graph cukup rapat dan berbobot. Upload file weighted juga langsung didukung.
+                    </p>
+                  )}
+                  {activeTab === "tsp_recursive_exact" && (
+                    <p className="mt-2 text-xs text-white/40">
+                      Mode exact memakai backtracking rekursif dari start node yang kamu pilih, jadi akurat tetapi jauh lebih lambat pada jumlah node yang lebih besar.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Extra params */}
               {needsStart && (
@@ -935,6 +1244,14 @@ export default function Home() {
               `Run ${TABS.find((t) => t.id === activeTab)?.label}`
             )}
           </button>
+
+          {(activeTab === "tsp_repeated_nn" || activeTab === "tsp_recursive_exact") && (
+            <div className="rounded-xl border border-rose-400/15 bg-rose-400/8 px-4 py-3 text-sm text-white/55">
+              {activeTab === "tsp_repeated_nn"
+                ? "Repeated nearest neighbor mencoba semua node sebagai start. Untuk menjaga visualisasi tetap responsif, backend membatasi TSP ke maksimum 14 node."
+                : "TSP exact rekursif mengeksplor banyak kemungkinan jalur. Backend membatasi mode ini ke maksimum 11 node agar tetap aman dijalankan."}
+            </div>
+          )}
         </div>
 
         {/* Right: Visualization + Results */}
@@ -952,6 +1269,9 @@ export default function Home() {
               diameterPathNodes={diameterPath}
               girthCycleNodes={girthCycle}
               mstEdges={mstEdges}
+              tspTourNodes={tspTour}
+              tspTourEdges={tspTourEdges}
+              tspStartNode={tspStartNode}
             />
           )}
 
