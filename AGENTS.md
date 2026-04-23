@@ -37,6 +37,9 @@ Package manager is **bun** (`bun.lock` present). Avoid mixing with `npm`/`yarn`.
   - Override with env var `CPP_ENGINE_PATH`.
   - Hard timeout: **10 seconds**.
 - **Validation:** `numVertices` capped at **1024** in the API route.
+- **WASM client-side:** `frontend/src/lib/wasm-bridge.ts` loads the C++ engine compiled to WebAssembly in the browser.
+  - Files: `frontend/public/graph_engine.js` + `frontend/public/graph_engine.wasm`.
+  - Frontend tries WASM first, falls back to `/api/graph` if WASM fails (e.g., server-side rendering or load error).
 
 ## Supported operations
 The C++ engine exposes 15 operations grouped into 5 "tugas":
@@ -88,8 +91,11 @@ Weighted edges include a third column `w`. The frontend file loader parses these
 - On Windows the binary name is `graph_engine.exe`; on Linux/Mac it is `graph_engine`. The Makefile and bridge both handle this.
 - When adding new C++ operations, mirror them in:
   1. `backend/graph_engine.cpp` (stdin JSON parser + algorithm)
-  2. `frontend/src/lib/cpp-bridge.ts` (`GraphResponse` interface)
-  3. `frontend/src/app/api/graph/route.ts` (`VALID_OPERATIONS`)
-  4. `frontend/src/app/page.tsx` (tab definition + result rendering)
+  2. `backend/graph_engine_wasm.cpp` (WASM wrapper — same algorithms, EMSCRIPTEN_KEEPALIVE entry point)
+  3. `frontend/src/lib/cpp-bridge.ts` (`GraphResponse` interface)
+  4. `frontend/src/lib/wasm-bridge.ts` (`GraphRequest` / `GraphResponse` interfaces)
+  5. `frontend/src/app/api/graph/route.ts` (`VALID_OPERATIONS`)
+  6. `frontend/src/app/page.tsx` (tab definition + result rendering)
 - When modifying TSP, update both edge-mode and coordinate-mode paths in `runOperation` body.
 - `GraphVisualizer.tsx` uses `any` types for `react-force-graph-2d` callbacks to avoid strict TypeScript incompatibility.
+- To recompile WASM after C++ changes: `bash backend/build_wasm.sh` (requires emscripten SDK).
