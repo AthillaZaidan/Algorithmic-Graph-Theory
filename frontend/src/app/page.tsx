@@ -7,6 +7,7 @@ import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
 import { GraphResponse } from "@/lib/cpp-bridge";
+import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 
 type Operation =
   | "dfs"
@@ -332,7 +333,7 @@ export default function Home() {
     setTspStartNode(undefined);
     clearAnimations();
 
-    const body: Record<string, unknown> = { operation: activeTab };
+    const body: GraphRequest = { operation: activeTab };
 
     if (activeTab === "tsp_grasp_swap") {
       body.mode = tspMode;
@@ -358,12 +359,17 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch("/api/graph", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      let data: GraphResponse;
+      try {
+        data = await callWasmEngine(body);
+      } catch {
+        const res = await fetch("/api/graph", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        data = await res.json();
+      }
 
       if (!data.success) {
         setError(data.error || "Unknown error from engine");

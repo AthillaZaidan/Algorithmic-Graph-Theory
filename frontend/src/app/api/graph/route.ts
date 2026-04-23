@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callCppEngine, GraphRequest } from "@/lib/cpp-bridge";
+import { callCppEngine } from "@/lib/cpp-bridge";
+import { GraphRequest } from "@/lib/cpp-bridge";
 
 const VALID_OPERATIONS = [
   "dfs", "bfs", "check_path", "check_connectivity",
