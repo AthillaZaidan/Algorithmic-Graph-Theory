@@ -6,6 +6,8 @@ import GraphInput from "@/components/GraphInput";
 import GraphVisualizer from "@/components/GraphVisualizer";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
+import TimetableVisualizer from "@/components/TimetableVisualizer";
+import TimetablingInput, { TimetablingConfig } from "@/components/TimetablingInput";
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 
@@ -24,7 +26,8 @@ type Operation =
   | "shortest_path"
   | "min_spanning_tree"
   | "tsp_grasp_swap"
-  | "maximum_bipartite_matching";
+  | "maximum_bipartite_matching"
+  | "timetabling_edge_coloring";
 
 interface TabDef {
   id: Operation;
@@ -49,6 +52,7 @@ const TABS: TabDef[] = [
   { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
   { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
   { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)" },
+  { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas" },
 ];
 
 const COMPONENT_COLORS = [
@@ -65,6 +69,18 @@ export default function Home() {
   const [nodeA, setNodeA] = useState(0);
   const [nodeB, setNodeB] = useState(4);
   const [grid, setGrid] = useState<string[]>(Array.from({ length: 5 }, () => "....."));
+  const [timetabling, setTimetabling] = useState<TimetablingConfig>({
+    teacherCount: 4,
+    classCount: 5,
+    requirements: [
+      [2, 0, 1, 1, 0],
+      [0, 1, 0, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 0, 1, 2],
+    ],
+    limitedRooms: false,
+    roomLimit: 2,
+  });
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GraphResponse | null>(null);
@@ -337,7 +353,14 @@ export default function Home() {
 
     const body: GraphRequest = { operation: activeTab };
 
-    if (activeTab === "tsp_grasp_swap") {
+    if (activeTab === "timetabling_edge_coloring") {
+      body.teacherCount = timetabling.teacherCount;
+      body.classCount = timetabling.classCount;
+      body.requirements = timetabling.requirements;
+      if (timetabling.limitedRooms) {
+        body.roomLimit = timetabling.roomLimit;
+      }
+    } else if (activeTab === "tsp_grasp_swap") {
       body.mode = tspMode;
       body.startNode = startNode;
       if (tspMode === "coordinate") {
@@ -374,7 +397,7 @@ export default function Home() {
       try {
         data = await callWasmEngine(body);
         if (
-          activeTab === "maximum_bipartite_matching" &&
+          (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring") &&
           !data.success &&
           (data.error || "").toLowerCase().includes("operasi tidak dikenal")
         ) {
@@ -534,7 +557,8 @@ export default function Home() {
     }
   };
 
-  const isGraphOp = activeTab !== "count_islands";
+  const isTimetabling = activeTab === "timetabling_edge_coloring";
+  const isGraphOp = activeTab !== "count_islands" && !isTimetabling;
   const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_grasp_swap";
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
   const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || (activeTab === "tsp_grasp_swap" && tspMode === "edge");
@@ -818,6 +842,98 @@ export default function Home() {
             )}
           </div>
         );
+
+      case "timetabling_edge_coloring": {
+        const assignments = result.assignments ?? [];
+        const periodCount = result.periodCount ?? 0;
+        const schedule = Array.from({ length: timetabling.teacherCount }, () =>
+          Array.from({ length: periodCount }, () => "")
+        );
+
+        assignments.forEach((assignment) => {
+          if (schedule[assignment.teacher]?.[assignment.period] !== undefined) {
+            schedule[assignment.teacher][assignment.period] = `Y${assignment.class + 1}`;
+          }
+        });
+
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Periode</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">{periodCount}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Delta</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-emerald-300">{result.delta ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-amber-300">{result.totalLessons ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Ruangan</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-violet-300">{result.roomLimit ?? "All"}</p>
+              </div>
+            </div>
+
+            {(result.periodSizes ?? []).length > 0 && (
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Ukuran matching per periode</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(result.periodSizes ?? []).map((size, period) => (
+                    <span
+                      key={period}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="font-mono text-cyan-200">P{period + 1}</span>
+                      <span className="text-white/35">=</span>
+                      <span className="font-mono text-white/75">{size}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-auto rounded-xl border border-white/[0.08]">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-white/[0.04]">
+                    <th className="sticky left-0 z-10 bg-[#0b1220] px-3 py-2 text-left text-xs font-semibold text-white/45">
+                      Guru
+                    </th>
+                    {Array.from({ length: periodCount }, (_, period) => (
+                      <th key={period} className="px-3 py-2 text-center text-xs font-semibold text-cyan-100/70">
+                        P{period + 1}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedule.map((row, teacher) => (
+                    <tr key={teacher} className="border-t border-white/[0.06]">
+                      <th className="sticky left-0 z-10 bg-[#0b1220] px-3 py-2 text-left text-xs font-semibold text-cyan-200/70">
+                        X{teacher + 1}
+                      </th>
+                      {row.map((classLabel, period) => (
+                        <td key={period} className="px-3 py-2 text-center">
+                          {classLabel ? (
+                            <span className="inline-flex min-w-10 justify-center rounded-lg border border-violet-400/25 bg-violet-400/15 px-2 py-1 font-mono text-violet-100">
+                              {classLabel}
+                            </span>
+                          ) : (
+                            <span className="text-white/18">-</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
 
       case "check_cycle":
         return (
@@ -1382,7 +1498,16 @@ export default function Home() {
       <div className="grid lg:grid-cols-5 gap-6">
         {/* Left: Input Panel */}
         <div className="lg:col-span-2 space-y-4">
-          {isGraphOp ? (
+          {isTimetabling ? (
+            <TimetablingInput
+              value={timetabling}
+              onChange={(next) => {
+                setTimetabling(next);
+                setResult(null);
+                setError("");
+              }}
+            />
+          ) : isGraphOp ? (
             <>
               {activeTab === "tsp_grasp_swap" && (
                 <div className="glass p-4">
@@ -1705,6 +1830,15 @@ export default function Home() {
               tspTourEdges={tspTourEdges}
               tspStartNode={tspStartNode}
               nodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates : undefined}
+            />
+          )}
+
+          {isTimetabling && (
+            <TimetableVisualizer
+              teacherCount={timetabling.teacherCount}
+              classCount={timetabling.classCount}
+              assignments={result?.success ? result.assignments ?? [] : []}
+              periodCount={result?.success ? result.periodCount ?? 0 : 0}
             />
           )}
 
