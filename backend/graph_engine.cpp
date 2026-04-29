@@ -543,6 +543,260 @@ json maximumBipartiteMatching(int N, const vector<pair<int,int>>& edgeList) {
     };
 }
 
+struct TimetableEdge {
+    int teacher;
+    int classId;
+    int color;
+    int id;
+};
+
+json solveTimetabling(int teacherCount, int classCount, const vector<vector<int>>& requirements, int roomLimit) {
+    vector<int> teacherLoads(teacherCount, 0);
+    vector<int> classLoads(classCount, 0);
+    vector<TimetableEdge> edges;
+    int totalLessons = 0;
+
+    for (int i = 0; i < teacherCount; i++) {
+        for (int j = 0; j < classCount; j++) {
+            int need = requirements[i][j];
+            teacherLoads[i] += need;
+            classLoads[j] += need;
+            for (int r = 0; r < need; r++) {
+                edges.push_back({i, j, -1, (int)edges.size()});
+            }
+            totalLessons += need;
+        }
+    }
+
+    int delta = 0;
+    for (int load : teacherLoads) delta = max(delta, load);
+    for (int load : classLoads) delta = max(delta, load);
+
+    int periodCount = delta;
+    if (roomLimit > 0 && totalLessons > 0) {
+        periodCount = max(delta, (totalLessons + roomLimit - 1) / roomLimit);
+    }
+
+    if (totalLessons == 0) {
+        json response = {
+            {"success", true},
+            {"periodCount", 0},
+            {"delta", delta},
+            {"totalLessons", totalLessons},
+            {"teacherLoads", teacherLoads},
+            {"classLoads", classLoads},
+            {"assignments", json::array()},
+            {"periodSizes", json::array()}
+        };
+        if (roomLimit > 0) response["roomLimit"] = roomLimit;
+        return response;
+    }
+
+    vector<vector<int>> teacherColor(teacherCount, vector<int>(periodCount, -1));
+    vector<vector<int>> classColor(classCount, vector<int>(periodCount, -1));
+
+    auto assignColor = [&](int edgeId, int color) {
+        TimetableEdge& e = edges[edgeId];
+        e.color = color;
+        teacherColor[e.teacher][color] = edgeId;
+        classColor[e.classId][color] = edgeId;
+    };
+
+    auto firstFreeTeacher = [&](int teacher) {
+        for (int c = 0; c < periodCount; c++) {
+            if (teacherColor[teacher][c] == -1) return c;
+        }
+        return -1;
+    };
+
+    auto firstFreeClass = [&](int classId) {
+        for (int c = 0; c < periodCount; c++) {
+            if (classColor[classId][c] == -1) return c;
+        }
+        return -1;
+    };
+
+    for (int edgeId = 0; edgeId < (int)edges.size(); edgeId++) {
+        int teacher = edges[edgeId].teacher;
+        int classId = edges[edgeId].classId;
+        int directColor = -1;
+
+        for (int color = 0; color < periodCount; color++) {
+            if (teacherColor[teacher][color] == -1 && classColor[classId][color] == -1) {
+                directColor = color;
+                break;
+            }
+        }
+
+        if (directColor != -1) {
+            assignColor(edgeId, directColor);
+            continue;
+        }
+
+        int alpha = firstFreeTeacher(teacher);
+        int beta = firstFreeClass(classId);
+        if (alpha == -1 || beta == -1) {
+            return json{{"success", false}, {"error", "Tidak ada warna bebas untuk alternating path"}};
+        }
+
+        vector<int> pathEdges;
+        int side = 1; // 0 = teacher, 1 = class
+        int vertex = classId;
+        int color = alpha;
+
+        while (true) {
+            int nextEdge = side == 0 ? teacherColor[vertex][color] : classColor[vertex][color];
+            if (nextEdge == -1) break;
+            pathEdges.push_back(nextEdge);
+
+            const TimetableEdge& e = edges[nextEdge];
+            if (side == 0) {
+                side = 1;
+                vertex = e.classId;
+            } else {
+                side = 0;
+                vertex = e.teacher;
+            }
+            color = (color == alpha) ? beta : alpha;
+        }
+
+        vector<pair<int, int>> recolor;
+        for (int pathEdge : pathEdges) {
+            TimetableEdge& e = edges[pathEdge];
+            int oldColor = e.color;
+            int newColor = (oldColor == alpha) ? beta : alpha;
+            teacherColor[e.teacher][oldColor] = -1;
+            classColor[e.classId][oldColor] = -1;
+            recolor.push_back({pathEdge, newColor});
+        }
+        for (auto [pathEdge, newColor] : recolor) {
+            TimetableEdge& e = edges[pathEdge];
+            e.color = newColor;
+            teacherColor[e.teacher][newColor] = pathEdge;
+            classColor[e.classId][newColor] = pathEdge;
+        }
+
+        assignColor(edgeId, alpha);
+    }
+
+    vector<int> periodSizes(periodCount, 0);
+    auto recomputePeriodSizes = [&]() {
+        fill(periodSizes.begin(), periodSizes.end(), 0);
+        for (const auto& e : edges) {
+            if (e.color >= 0) periodSizes[e.color]++;
+        }
+    };
+    recomputePeriodSizes();
+
+    auto rebalancePair = [&](int highColor, int lowColor) {
+        int vertexCount = teacherCount + classCount;
+        vector<vector<int>> incident(vertexCount);
+        for (const auto& e : edges) {
+            if (e.color == highColor || e.color == lowColor) {
+                incident[e.teacher].push_back(e.id);
+                incident[teacherCount + e.classId].push_back(e.id);
+            }
+        }
+
+        vector<char> visited(edges.size(), 0);
+        for (const auto& startEdge : edges) {
+            if (visited[startEdge.id] || (startEdge.color != highColor && startEdge.color != lowColor)) continue;
+
+            vector<int> componentEdges;
+            queue<int> q;
+            q.push(startEdge.id);
+            visited[startEdge.id] = 1;
+
+            while (!q.empty()) {
+                int edgeId = q.front();
+                q.pop();
+                componentEdges.push_back(edgeId);
+
+                const TimetableEdge& e = edges[edgeId];
+                int a = e.teacher;
+                int b = teacherCount + e.classId;
+                for (int vertexId : {a, b}) {
+                    for (int nextEdge : incident[vertexId]) {
+                        if (!visited[nextEdge]) {
+                            visited[nextEdge] = 1;
+                            q.push(nextEdge);
+                        }
+                    }
+                }
+            }
+
+            int highCount = 0;
+            int lowCount = 0;
+            for (int edgeId : componentEdges) {
+                if (edges[edgeId].color == highColor) highCount++;
+                else lowCount++;
+            }
+
+            if (highCount > lowCount) {
+                for (int edgeId : componentEdges) {
+                    edges[edgeId].color = edges[edgeId].color == highColor ? lowColor : highColor;
+                }
+                recomputePeriodSizes();
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    if (roomLimit > 0) {
+        int guard = max(1, totalLessons * max(1, periodCount));
+        while (guard-- > 0) {
+            int highColor = 0;
+            int lowColor = 0;
+            for (int c = 1; c < periodCount; c++) {
+                if (periodSizes[c] > periodSizes[highColor]) highColor = c;
+                if (periodSizes[c] < periodSizes[lowColor]) lowColor = c;
+            }
+
+            if (periodSizes[highColor] <= periodSizes[lowColor] + 1) break;
+            if (!rebalancePair(highColor, lowColor)) {
+                return json{{"success", false}, {"error", "Balancing Lemma 6.3 gagal menemukan komponen penukar"}};
+            }
+        }
+    }
+
+    vector<int> order(edges.size());
+    iota(order.begin(), order.end(), 0);
+    sort(order.begin(), order.end(), [&](int a, int b) {
+        const auto& ea = edges[a];
+        const auto& eb = edges[b];
+        if (ea.color != eb.color) return ea.color < eb.color;
+        if (ea.teacher != eb.teacher) return ea.teacher < eb.teacher;
+        if (ea.classId != eb.classId) return ea.classId < eb.classId;
+        return ea.id < eb.id;
+    });
+
+    json assignments = json::array();
+    for (int edgeId : order) {
+        const auto& e = edges[edgeId];
+        assignments.push_back({
+            {"teacher", e.teacher},
+            {"class", e.classId},
+            {"period", e.color},
+            {"edgeId", e.id}
+        });
+    }
+
+    json response = {
+        {"success", true},
+        {"periodCount", periodCount},
+        {"delta", delta},
+        {"totalLessons", totalLessons},
+        {"teacherLoads", teacherLoads},
+        {"classLoads", classLoads},
+        {"assignments", assignments},
+        {"periodSizes", periodSizes}
+    };
+    if (roomLimit > 0) response["roomLimit"] = roomLimit;
+    return response;
+}
+
 // Check Cycle using DFS
 json checkCycle(int N, const vector<pair<int,int>>& edgeList) {
     adj.assign(N, vector<int>());
@@ -1170,6 +1424,50 @@ int main() {
                 {"unmatchedA", matchingResult["unmatchedA"]},
                 {"unmatchedB", matchingResult["unmatchedB"]}
             };
+
+        } else if (operation == "timetabling_edge_coloring") {
+            int teacherCount = input.at("teacherCount").get<int>();
+            int classCount = input.at("classCount").get<int>();
+            if (teacherCount <= 0 || classCount <= 0 || teacherCount + classCount > 1024) {
+                cout << json{{"success", false}, {"error", "Jumlah guru + kelas harus 1-1024"}}.dump() << endl;
+                return 0;
+            }
+
+            if (!input.contains("requirements") || !input["requirements"].is_array() || (int)input["requirements"].size() != teacherCount) {
+                cout << json{{"success", false}, {"error", "Matrix requirements tidak sesuai jumlah guru"}}.dump() << endl;
+                return 0;
+            }
+
+            vector<vector<int>> requirements(teacherCount, vector<int>(classCount, 0));
+            long long totalLessons = 0;
+            for (int i = 0; i < teacherCount; i++) {
+                if (!input["requirements"][i].is_array() || (int)input["requirements"][i].size() != classCount) {
+                    cout << json{{"success", false}, {"error", "Matrix requirements tidak sesuai jumlah kelas"}}.dump() << endl;
+                    return 0;
+                }
+                for (int j = 0; j < classCount; j++) {
+                    int value = input["requirements"][i][j].get<int>();
+                    if (value < 0) {
+                        cout << json{{"success", false}, {"error", "Nilai p_ij tidak boleh negatif"}}.dump() << endl;
+                        return 0;
+                    }
+                    requirements[i][j] = value;
+                    totalLessons += value;
+                }
+            }
+
+            if (totalLessons > 100000) {
+                cout << json{{"success", false}, {"error", "Total kebutuhan mengajar terlalu besar (max 100000)"}}.dump() << endl;
+                return 0;
+            }
+
+            int roomLimit = input.value("roomLimit", 0);
+            if (roomLimit < 0) {
+                cout << json{{"success", false}, {"error", "Kapasitas ruangan tidak boleh negatif"}}.dump() << endl;
+                return 0;
+            }
+
+            result = solveTimetabling(teacherCount, classCount, requirements, roomLimit);
 
         } else if (operation == "shortest_path") {
             int N = input.at("numVertices").get<int>();

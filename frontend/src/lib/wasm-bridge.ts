@@ -4,11 +4,22 @@ export interface GraphRequest {
   numVertices?: number;
   edges?: number[][];
   coordinates?: { x: number; y: number }[];
+  teacherCount?: number;
+  classCount?: number;
+  requirements?: number[][];
+  roomLimit?: number;
   startNode?: number;
   nodeA?: number;
   nodeB?: number;
   grid?: string[];
   timeLimitMs?: number;
+}
+
+export interface TimetableAssignment {
+  teacher: number;
+  class: number;
+  period: number;
+  edgeId: number;
 }
 
 export interface GraphResponse {
@@ -46,6 +57,14 @@ export interface GraphResponse {
   matchingEdges?: number[][];
   unmatchedA?: number[];
   unmatchedB?: number[];
+  periodCount?: number;
+  delta?: number;
+  totalLessons?: number;
+  roomLimit?: number;
+  teacherLoads?: number[];
+  classLoads?: number[];
+  assignments?: TimetableAssignment[];
+  periodSizes?: number[];
 }
 
 interface EmscriptenModule {

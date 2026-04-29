@@ -7,7 +7,7 @@ const VALID_OPERATIONS = [
   "count_components", "largest_component", "count_islands",
   "check_bipartite", "check_cycle", "diameter", "girth",
   "shortest_path", "min_spanning_tree", "tsp_grasp_swap",
-  "maximum_bipartite_matching"
+  "maximum_bipartite_matching", "timetabling_edge_coloring"
 ];
 
 function maximumBipartiteMatching(body: GraphRequest): GraphResponse {
@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
 
     const skipNumVerticesCheck =
       body.operation === "count_islands" ||
+      body.operation === "timetabling_edge_coloring" ||
       (body.operation === "tsp_grasp_swap" && body.mode === "coordinate");
 
     if (!skipNumVerticesCheck) {
