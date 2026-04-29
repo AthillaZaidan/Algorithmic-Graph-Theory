@@ -23,7 +23,6 @@ interface GraphVisualizerProps {
   tspStartNode?: number;
   nodePositions?: { x: number; y: number }[];
   showCoordGrid?: boolean;
-  bipartiteLayout?: { top: number[]; bottom: number[] };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,7 +46,6 @@ export default function GraphVisualizer({
   tspStartNode,
   nodePositions,
   showCoordGrid,
-  bipartiteLayout,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
@@ -120,67 +118,12 @@ export default function GraphVisualizer({
     return s;
   }, [tspTourEdges]);
 
-  const derivedBipartiteLayout = useMemo(() => {
-    if (!bipartiteColors || bipartiteColors.size === 0) return undefined;
-
-    const colorGroups = new Map<string, number[]>();
-    for (const [node, color] of bipartiteColors.entries()) {
-      const group = colorGroups.get(color) ?? [];
-      group.push(node);
-      colorGroups.set(color, group);
-    }
-
-    const groups = Array.from(colorGroups.values()).map((group) => [...group].sort((a, b) => a - b));
-    return {
-      top: groups[0] ?? [],
-      bottom: groups[1] ?? [],
-    };
-  }, [bipartiteColors]);
-
-  const activeBipartiteLayout = bipartiteLayout ?? derivedBipartiteLayout;
-  const isBipartiteLayout = activeBipartiteLayout != null;
   const showGrid = showCoordGrid ?? (nodePositions != null && nodePositions.length > 0);
-
-  const bipartitePositions = useMemo(() => {
-    if (!activeBipartiteLayout) return new Map<number, { x: number; y: number }>();
-
-    const positions = new Map<number, { x: number; y: number }>();
-    const width = Math.max(dimensions.width, 320);
-    const horizontalPadding = Math.min(80, Math.max(40, width * 0.12));
-    const usableWidth = Math.max(120, width - horizontalPadding * 2);
-    const topY = -90;
-    const bottomY = 90;
-
-    const placeRow = (nodes: number[], y: number) => {
-      const count = nodes.length;
-      if (count === 0) return;
-      if (count === 1) {
-        positions.set(nodes[0], { x: 0, y });
-        return;
-      }
-
-      nodes.forEach((node, index) => {
-        const x = -usableWidth / 2 + (usableWidth * index) / (count - 1);
-        positions.set(node, { x, y });
-      });
-    };
-
-    placeRow(activeBipartiteLayout.top, topY);
-    placeRow(activeBipartiteLayout.bottom, bottomY);
-
-    return positions;
-  }, [activeBipartiteLayout, dimensions.width]);
 
   const graphData = useMemo(() => {
     const nodes: AnyNode[] = Array.from({ length: numVertices }, (_, i) => {
       const n: AnyNode = { id: i, label: `${i}` };
-      const bipartitePos = bipartitePositions.get(i);
-      if (bipartitePos) {
-        n.x = bipartitePos.x;
-        n.y = bipartitePos.y;
-        n.fx = bipartitePos.x;
-        n.fy = bipartitePos.y;
-      } else if (nodePositions && i < nodePositions.length) {
+      if (nodePositions && i < nodePositions.length) {
         const pos = nodePositions[i];
         n.x = pos.x;
         n.y = pos.y;
@@ -191,7 +134,7 @@ export default function GraphVisualizer({
     });
     const links: AnyLink[] = edges.map(([source, target]) => ({ source, target }));
     return { nodes, links };
-  }, [numVertices, edges, nodePositions, bipartitePositions]);
+  }, [numVertices, edges, nodePositions]);
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -417,8 +360,8 @@ export default function GraphVisualizer({
           }}
           linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"
-          cooldownTime={nodePositions || isBipartiteLayout ? 0 : 2000}
-          enableNodeDrag={!nodePositions && !isBipartiteLayout}
+          cooldownTime={nodePositions ? 0 : 2000}
+          enableNodeDrag={!nodePositions}
           enableZoomInteraction
           enablePanInteraction
         />
