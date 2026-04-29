@@ -75,6 +75,7 @@ export default function Home() {
   const [islandLabels, setIslandLabels] = useState<number[][] | undefined>();
   const [islandCount, setIslandCount] = useState<number | undefined>();
   const [bipartiteColors, setBipartiteColors] = useState<Map<number, string>>(new Map());
+  const [bipartiteLayoutParts, setBipartiteLayoutParts] = useState<{ top: number[]; bottom: number[] } | undefined>();
   const [cyclePathNodes, setCyclePathNodes] = useState<number[]>([]);
   const [diameterPath, setDiameterPath] = useState<number[]>([]);
   const [diameterLength, setDiameterLength] = useState<number | undefined>();
@@ -320,6 +321,7 @@ export default function Home() {
     setIslandLabels(undefined);
     setIslandCount(undefined);
     setBipartiteColors(new Map());
+    setBipartiteLayoutParts(undefined);
     setCyclePathNodes([]);
     setDiameterPath([]);
     setDiameterLength(undefined);
@@ -431,6 +433,7 @@ export default function Home() {
         
         setBipartiteColors(bipartiteColorMap);
         setHighlightNodes(Array.from({ length: numVertices }, (_, i) => i));
+        setBipartiteLayoutParts(data.isBipartite ? { top: partA, bottom: partB } : undefined);
       } else if (activeTab === "check_cycle") {
         if (data.hasCycle && data.cyclePath) {
           const cycle = data.cyclePath as number[];
@@ -1027,6 +1030,7 @@ export default function Home() {
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
+                    setBipartiteLayoutParts(undefined);
                     setCyclePathNodes([]);
                     setTspTour([]);
                     setTspTourEdges([]);
@@ -1068,6 +1072,7 @@ export default function Home() {
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
+                    setBipartiteLayoutParts(undefined);
                     setCyclePathNodes([]);
                     setTspTour([]);
                     setTspTourEdges([]);
@@ -1109,6 +1114,7 @@ export default function Home() {
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
+                    setBipartiteLayoutParts(undefined);
                     setCyclePathNodes([]);
                     setDiameterPath([]);
                     setDiameterLength(undefined);
@@ -1158,6 +1164,7 @@ export default function Home() {
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
+                    setBipartiteLayoutParts(undefined);
                     setCyclePathNodes([]);
                     setDiameterPath([]);
                     setDiameterLength(undefined);
@@ -1205,6 +1212,7 @@ export default function Home() {
                     setIslandLabels(undefined);
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
+                    setBipartiteLayoutParts(undefined);
                     setCyclePathNodes([]);
                     setDiameterPath([]);
                     setDiameterLength(undefined);
@@ -1556,6 +1564,7 @@ export default function Home() {
               highlightEdges={highlightEdges}
               componentColors={componentColors.size > 0 ? componentColors : undefined}
               bipartiteColors={bipartiteColors.size > 0 ? bipartiteColors : undefined}
+              bipartiteLayout={bipartiteLayoutParts}
               cyclePathNodes={cyclePathNodes}
               diameterPathNodes={diameterPath}
               girthCycleNodes={girthCycle}
