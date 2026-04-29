@@ -10,6 +10,7 @@ import TimetableVisualizer from "@/components/TimetableVisualizer";
 import TimetablingInput, { TimetablingConfig } from "@/components/TimetablingInput";
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
+import { CITY_PRESETS } from "@/lib/city-data";
 
 type Operation =
   | "dfs"
@@ -110,7 +111,9 @@ export default function Home() {
     { x: 100, y: 0 },
     { x: 50, y: 87 },
   ]);
+  const [cityNames, setCityNames] = useState<string[]>([]);
   const [coordPreset, setCoordPreset] = useState("");
+  const [graphPreset, setGraphPreset] = useState("");
   const [coordN, setCoordN] = useState(6);
   const [coordM, setCoordM] = useState(3);
   const [coordK, setCoordK] = useState(2);
@@ -146,6 +149,25 @@ export default function Home() {
   }, [activeTab, tspMode, coordinates, coordStructEdges]);
 
   const generateCoordPreset = () => {
+    const preset = CITY_PRESETS.find(p => p.id === coordPreset);
+    if (preset) {
+      const minLat = Math.min(...preset.cities.map(c => c.lat));
+      const maxLat = Math.max(...preset.cities.map(c => c.lat));
+      const minLng = Math.min(...preset.cities.map(c => c.lng));
+      const maxLng = Math.max(...preset.cities.map(c => c.lng));
+      const rangeX = maxLng - minLng || 1;
+      const rangeY = maxLat - minLat || 1;
+      const pts = preset.cities.map(c => ({
+        x: Math.round(((c.lng - minLng) / rangeX) * 200 - 100) * 100 / 100,
+        y: Math.round((1 - (c.lat - minLat) / rangeY) * 200 - 100) * 100 / 100,
+      }));
+      setCoordinates(pts);
+      setCityNames(preset.cities.map(c => c.name));
+      setCoordStructEdges([]);
+      setStartNode(0);
+      return;
+    }
+
     let pts: { x: number; y: number }[] = [];
     const structEdges: number[][] = [];
     const R = 100;
@@ -164,7 +186,7 @@ export default function Home() {
       structEdges.push([u, v, w]);
     };
 
-    switch (coordPreset) {
+    switch (graphPreset) {
       case "complete":
         pts = Array.from({ length: n }, (_, i) => poly(i, n));
         for (let i = 0; i < pts.length; i++)
@@ -303,6 +325,7 @@ export default function Home() {
         return;
     }
     setCoordinates(pts);
+    setCityNames([]);
     setCoordStructEdges(structEdges);
     setStartNode(0);
   };
@@ -1548,14 +1571,59 @@ export default function Home() {
 
                   {/* Coordinate Preset */}
                   <div className="space-y-2">
-                    <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Graf</label>
+                    <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Kota / Kabupaten</label>
                     <div className="flex gap-2">
                       <select
-                        value={coordPreset}
-                        onChange={(e) => setCoordPreset(e.target.value)}
+                        value={CITY_PRESETS.some(p => p.id === coordPreset) ? coordPreset : ""}
+                        onChange={(e) => {
+                          setCoordPreset(e.target.value);
+                          setGraphPreset("");
+                        }}
                         className="glass-input flex-1 text-sm text-white/80"
                       >
-                        <option value="">Pilih preset...</option>
+                        <option value="">Pilih kota/kabupaten...</option>
+                        {(() => {
+                          const groups = [...new Set(CITY_PRESETS.map(p => p.group))];
+                          return groups.map(g => (
+                            <optgroup key={g} label={g}>
+                              {CITY_PRESETS.filter(p => p.group === g).map(p => (
+                                <option key={p.id} value={p.id}>{p.label}</option>
+                              ))}
+                            </optgroup>
+                          ));
+                        })()}
+                      </select>
+                      {CITY_PRESETS.some(p => p.id === coordPreset) && (
+                        <button onClick={generateCoordPreset} className="glass-btn px-3 py-1.5 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15">
+                          Load
+                        </button>
+                      )}
+                    </div>
+                    {CITY_PRESETS.some(p => p.id === coordPreset) && (
+                      <p className="text-[11px] text-white/30">
+                        {CITY_PRESETS.find(p => p.id === coordPreset)?.cities.length} lokasi
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 text-white/20 text-xs">
+                    <div className="flex-1 border-t border-white/10" />
+                    <span>atau</span>
+                    <div className="flex-1 border-t border-white/10" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Graf Geometri</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={graphPreset}
+                        onChange={(e) => {
+                          setGraphPreset(e.target.value);
+                          setCoordPreset("");
+                        }}
+                        className="glass-input flex-1 text-sm text-white/80"
+                      >
+                        <option value="">Pilih preset graf...</option>
                         <option value="complete">Graf Lengkap Kn</option>
                         <option value="completeBipartite">Graf Bipartit K(m,n)</option>
                         <option value="cycle">Siklus Cn</option>
@@ -1564,39 +1632,39 @@ export default function Home() {
                         <option value="prism">Graf Prisma</option>
                         <option value="petersen">Petersen Graph</option>
                         <option value="generalizedPetersen">Generalized Petersen P(n,k)</option>
-                        <option value="circulant">Circulant Cn(a1,a2)</option>
+                        <option value="circulant">Circulant Cn(a₁,a₂)</option>
                         <option value="hypercube">Hypercube H(n)</option>
                         <option value="grid">Grid G(m,n)</option>
                       </select>
                     </div>
-                    {coordPreset && (
+                    {graphPreset && (
                       <div className="flex flex-wrap gap-2 items-center">
-                        {(coordPreset === "complete" || coordPreset === "cycle" || coordPreset === "path" || coordPreset === "wheel" || coordPreset === "prism" || coordPreset === "circulant") && (
+                        {(graphPreset === "complete" || graphPreset === "cycle" || graphPreset === "path" || graphPreset === "wheel" || graphPreset === "prism" || graphPreset === "circulant") && (
                           <input type="number" min={2} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
                         )}
-                        {coordPreset === "completeBipartite" && (
+                        {graphPreset === "completeBipartite" && (
                           <>
                             <input type="number" min={1} value={coordM} onChange={(e) => setCoordM(parseInt(e.target.value) || 1)} placeholder="m" className="glass-input w-16 text-center font-mono text-sm" />
                             <input type="number" min={1} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 1)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
                           </>
                         )}
-                        {coordPreset === "generalizedPetersen" && (
+                        {graphPreset === "generalizedPetersen" && (
                           <>
                             <input type="number" min={3} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
                             <input type="number" min={1} value={coordK} onChange={(e) => setCoordK(parseInt(e.target.value) || 1)} placeholder="k" className="glass-input w-16 text-center font-mono text-sm" />
                           </>
                         )}
-                        {coordPreset === "circulant" && (
+                        {graphPreset === "circulant" && (
                           <>
                             <input type="number" min={3} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 3)} placeholder="n" className="glass-input w-16 text-center font-mono text-sm" />
                             <input type="number" min={1} value={coordA1} onChange={(e) => setCoordA1(parseInt(e.target.value) || 1)} placeholder="a1" className="glass-input w-16 text-center font-mono text-sm" />
                             <input type="number" min={1} value={coordA2} onChange={(e) => setCoordA2(parseInt(e.target.value) || 1)} placeholder="a2" className="glass-input w-16 text-center font-mono text-sm" />
                           </>
                         )}
-                        {coordPreset === "hypercube" && (
+                        {graphPreset === "hypercube" && (
                           <input type="number" min={1} max={6} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 1)} placeholder="dim" className="glass-input w-16 text-center font-mono text-sm" />
                         )}
-                        {coordPreset === "grid" && (
+                        {graphPreset === "grid" && (
                           <>
                             <input type="number" min={2} value={coordM} onChange={(e) => setCoordM(parseInt(e.target.value) || 2)} placeholder="m (baris)" className="glass-input w-16 text-center font-mono text-sm" />
                             <input type="number" min={2} value={coordN} onChange={(e) => setCoordN(parseInt(e.target.value) || 2)} placeholder="n (kolom)" className="glass-input w-16 text-center font-mono text-sm" />
@@ -1623,7 +1691,7 @@ export default function Home() {
                         key={idx}
                         className="grid grid-cols-[2.5rem_1fr_1fr_2rem] gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg px-1 py-1.5 transition-colors"
                       >
-                        <span className="text-xs font-mono text-white/50 text-center">{idx}</span>
+                        <span className="text-xs font-mono text-white/50 text-center" title={cityNames[idx] || undefined}>{cityNames[idx] ? cityNames[idx].slice(0, 6) : idx}</span>
                         <input
                           type="number"
                           step="any"
@@ -1653,7 +1721,7 @@ export default function Home() {
                           className="glass-input w-full text-center text-sm font-mono py-1.5"
                         />
                         <button
-                          onClick={() => { setCoordinates(coordinates.filter((_, i) => i !== idx)); setCoordStructEdges([]); }}
+                          onClick={() => { setCoordinates(coordinates.filter((_, i) => i !== idx)); setCoordStructEdges([]); setCityNames(cityNames.filter((_, i) => i !== idx)); }}
                           className="flex items-center justify-center text-red-400/40 hover:text-red-400 transition-colors"
                           title="Hapus node"
                         >
@@ -1667,7 +1735,7 @@ export default function Home() {
 
                   <div className="flex gap-2 pt-1">
                     <button
-                      onClick={() => { setCoordinates([...coordinates, { x: 0, y: 0 }]); setCoordStructEdges([]); }}
+                      onClick={() => { setCoordinates([...coordinates, { x: 0, y: 0 }]); setCoordStructEdges([]); setCityNames([...cityNames, ""]); }}
                       className="flex-1 glass-btn px-3 py-2 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15 flex items-center justify-center gap-1.5"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -1830,6 +1898,7 @@ export default function Home() {
               tspTourEdges={tspTourEdges}
               tspStartNode={tspStartNode}
               nodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates : undefined}
+              nodeLabels={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0 ? cityNames : undefined}
             />
           )}
 

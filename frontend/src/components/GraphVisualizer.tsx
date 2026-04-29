@@ -22,6 +22,7 @@ interface GraphVisualizerProps {
   tspTourEdges?: number[][];
   tspStartNode?: number;
   nodePositions?: { x: number; y: number }[];
+  nodeLabels?: string[];
   showCoordGrid?: boolean;
 }
 
@@ -45,6 +46,7 @@ export default function GraphVisualizer({
   tspTourEdges,
   tspStartNode,
   nodePositions,
+  nodeLabels,
   showCoordGrid,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -122,7 +124,7 @@ export default function GraphVisualizer({
 
   const graphData = useMemo(() => {
     const nodes: AnyNode[] = Array.from({ length: numVertices }, (_, i) => {
-      const n: AnyNode = { id: i, label: `${i}` };
+      const n: AnyNode = { id: i, label: (nodeLabels && i < nodeLabels.length && nodeLabels[i]) ? nodeLabels[i] : `${i}` };
       if (nodePositions && i < nodePositions.length) {
         const pos = nodePositions[i];
         n.x = pos.x;
@@ -134,7 +136,7 @@ export default function GraphVisualizer({
     });
     const links: AnyLink[] = edges.map(([source, target]) => ({ source, target }));
     return { nodes, links };
-  }, [numVertices, edges, nodePositions]);
+  }, [numVertices, edges, nodePositions, nodeLabels]);
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -154,7 +156,7 @@ export default function GraphVisualizer({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeLabel={(node: AnyNode) => `Node ${node.id}`}
+          nodeLabel={(node: AnyNode) => node.label || `Node ${node.id}`}
           nodeRelSize={6}
           nodeCanvasObjectMode={() => "replace"}
           nodeCanvasObject={(node: AnyNode, ctx: CanvasRenderingContext2D) => {
@@ -246,7 +248,8 @@ export default function GraphVisualizer({
               baseColor = "#22d3ee";
             }
 
-            const radius = isTspNode ? 8.2 : isHighlighted || isCyclePath || isGirthNode ? 9 : 7;
+            const hasCustomLabel = nodeLabels && nodeLabels.length > 0;
+            const radius = isTspNode ? 8.2 : isHighlighted || isCyclePath || isGirthNode ? 9 : hasCustomLabel ? 8 : 7;
 
             if (isHighlighted || hasCompColor || hasBipartiteColor || isCyclePath || isGirthNode || isTspNode) {
               ctx.beginPath();
@@ -267,11 +270,15 @@ export default function GraphVisualizer({
             ctx.lineWidth = isTspStart ? 2.2 : isCyclePath ? 2.5 : 1.2;
             ctx.stroke();
 
-            ctx.font = `bold ${isHighlighted || isCyclePath || isTspNode ? "7px" : "6px"} sans-serif`;
+            const displayLabel = (nodeLabels && id < nodeLabels.length && nodeLabels[id])
+              ? (nodeLabels[id].length > 8 ? nodeLabels[id].slice(0, 7) + "…" : nodeLabels[id])
+              : `${id}`;
+            const fontSize = hasCustomLabel ? (isHighlighted || isCyclePath || isTspNode ? "5px" : "4.5px") : (isHighlighted || isCyclePath || isTspNode ? "7px" : "6px");
+            ctx.font = `bold ${fontSize} sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillStyle = isHighlighted || hasCompColor || hasBipartiteColor || isTspNode ? "#ffffff" : "rgba(255,255,255,0.95)";
-            ctx.fillText(`${id}`, x, y);
+            ctx.fillText(displayLabel, x, y);
           }}
           linkCanvasObject={(link: AnyLink, ctx: CanvasRenderingContext2D) => {
             const src = typeof link.source === "object" ? link.source : undefined;
