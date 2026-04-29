@@ -830,3 +830,10 @@ export const CITY_PRESETS: CityPreset[] = [
     ],
   },
 ];
+
+export const ALL_INDONESIA_PRESET: CityPreset = {
+  id: "seluruh-indonesia",
+  label: "Seluruh Indonesia (514 kab/kota)",
+  group: "Indonesia",
+  cities: CITY_PRESETS.flatMap(p => p.cities),
+};

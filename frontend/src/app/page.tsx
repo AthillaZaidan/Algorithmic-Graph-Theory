@@ -10,7 +10,7 @@ import TimetableVisualizer from "@/components/TimetableVisualizer";
 import TimetablingInput, { TimetablingConfig } from "@/components/TimetablingInput";
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
-import { CITY_PRESETS } from "@/lib/city-data";
+import { CITY_PRESETS, ALL_INDONESIA_PRESET } from "@/lib/city-data";
 
 type Operation =
   | "dfs"
@@ -63,6 +63,8 @@ const COMPONENT_COLORS = [
 ];
 
 export default function Home() {
+  const allCityPresets = useMemo(() => [...CITY_PRESETS, ALL_INDONESIA_PRESET], []);
+
   const [activeTab, setActiveTab] = useState<Operation>("dfs");
   const [numVertices, setNumVertices] = useState(5);
   const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
@@ -149,7 +151,7 @@ export default function Home() {
   }, [activeTab, tspMode, coordinates, coordStructEdges]);
 
   const generateCoordPreset = () => {
-    const preset = CITY_PRESETS.find(p => p.id === coordPreset);
+    const preset = allCityPresets.find(p => p.id === coordPreset);
     if (preset) {
       const minLat = Math.min(...preset.cities.map(c => c.lat));
       const maxLat = Math.max(...preset.cities.map(c => c.lat));
@@ -1574,7 +1576,7 @@ export default function Home() {
                     <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Kota / Kabupaten</label>
                     <div className="flex gap-2">
                       <select
-                        value={CITY_PRESETS.some(p => p.id === coordPreset) ? coordPreset : ""}
+                        value={allCityPresets.some(p => p.id === coordPreset) ? coordPreset : ""}
                         onChange={(e) => {
                           setCoordPreset(e.target.value);
                           setGraphPreset("");
@@ -1582,6 +1584,7 @@ export default function Home() {
                         className="glass-input flex-1 text-sm text-white/80"
                       >
                         <option value="">Pilih kota/kabupaten...</option>
+                        <option value={ALL_INDONESIA_PRESET.id}>{ALL_INDONESIA_PRESET.label}</option>
                         {(() => {
                           const groups = [...new Set(CITY_PRESETS.map(p => p.group))];
                           return groups.map(g => (
@@ -1593,15 +1596,15 @@ export default function Home() {
                           ));
                         })()}
                       </select>
-                      {CITY_PRESETS.some(p => p.id === coordPreset) && (
+                      {allCityPresets.some(p => p.id === coordPreset) && (
                         <button onClick={generateCoordPreset} className="glass-btn px-3 py-1.5 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15">
                           Load
                         </button>
                       )}
                     </div>
-                    {CITY_PRESETS.some(p => p.id === coordPreset) && (
+                    {allCityPresets.some(p => p.id === coordPreset) && (
                       <p className="text-[11px] text-white/30">
-                        {CITY_PRESETS.find(p => p.id === coordPreset)?.cities.length} lokasi
+                        {allCityPresets.find(p => p.id === coordPreset)?.cities.length} lokasi
                       </p>
                     )}
                   </div>
