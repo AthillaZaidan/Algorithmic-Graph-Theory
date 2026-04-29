@@ -189,6 +189,97 @@ json checkBipartite(int N, const vector<pair<int,int>>& edgeList) {
     return {{"isBipartite", true}, {"partitionA", partA}, {"partitionB", partB}};
 }
 
+json maximumBipartiteMatching(int N, const vector<pair<int,int>>& edgeList) {
+    vector<vector<int>> adj(N);
+    for (const auto& [u, v] : edgeList) {
+        if (u >= 0 && u < N && v >= 0 && v < N) {
+            adj[u].push_back(v);
+            adj[v].push_back(u);
+        }
+    }
+
+    vector<int> color(N, -1), partA, partB;
+    for (int start = 0; start < N; start++) {
+        if (color[start] != -1) continue;
+        queue<int> q;
+        color[start] = 0;
+        q.push(start);
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop();
+            for (int v : adj[u]) {
+                if (color[v] == -1) {
+                    color[v] = 1 - color[u];
+                    q.push(v);
+                } else if (color[v] == color[u]) {
+                    return {{"isBipartite", false}, {"partitionA", json::array()}, {"partitionB", json::array()}, {"matchingSize", 0}, {"matchingEdges", json::array()}, {"unmatchedA", json::array()}, {"unmatchedB", json::array()}};
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < N; i++) {
+        if (color[i] == 0) partA.push_back(i);
+        else if (color[i] == 1) partB.push_back(i);
+    }
+
+    vector<int> pairU(N, -1), pairV(N, -1), dist(N, INT_MAX);
+    auto bfs = [&]() {
+        queue<int> q;
+        bool foundFreeRight = false;
+        for (int u : partA) {
+            if (pairU[u] == -1) { dist[u] = 0; q.push(u); }
+            else dist[u] = INT_MAX;
+        }
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop();
+            for (int v : adj[u]) {
+                if (color[v] != 1) continue;
+                int matchedU = pairV[v];
+                if (matchedU == -1) foundFreeRight = true;
+                else if (dist[matchedU] == INT_MAX) {
+                    dist[matchedU] = dist[u] + 1;
+                    q.push(matchedU);
+                }
+            }
+        }
+        return foundFreeRight;
+    };
+
+    function<bool(int)> dfs = [&](int u) {
+        for (int v : adj[u]) {
+            if (color[v] != 1) continue;
+            int matchedU = pairV[v];
+            if (matchedU == -1 || (dist[matchedU] == dist[u] + 1 && dfs(matchedU))) {
+                pairU[u] = v;
+                pairV[v] = u;
+                return true;
+            }
+        }
+        dist[u] = INT_MAX;
+        return false;
+    };
+
+    int matchingSize = 0;
+    while (bfs()) {
+        for (int u : partA) {
+            if (pairU[u] == -1 && dfs(u)) matchingSize++;
+        }
+    }
+
+    json matchingEdges = json::array(), unmatchedA = json::array(), unmatchedB = json::array();
+    for (int u : partA) {
+        if (pairU[u] == -1) unmatchedA.push_back(u);
+        else matchingEdges.push_back({u, pairU[u]});
+    }
+    for (int v : partB) {
+        if (pairV[v] == -1) unmatchedB.push_back(v);
+    }
+
+    return {{"isBipartite", true}, {"partitionA", partA}, {"partitionB", partB}, {"matchingSize", matchingSize}, {"matchingEdges", matchingEdges}, {"unmatchedA", unmatchedA}, {"unmatchedB", unmatchedB}};
+}
+
 json checkCycle(int N, const vector<pair<int,int>>& edgeList) {
     vector<vector<int>> adj(N);
     for (const auto& [u, v] : edgeList) { if (u >= 0 && u < N && v >= 0 && v < N) { adj[u].push_back(v); adj[v].push_back(u); } }
@@ -373,6 +464,14 @@ const char* processGraph(const char* inputJson) {
             vector<string> gridRows; for (auto& row : input.at("grid")) gridRows.push_back(row.get<string>());
             if (gridRows.size()>100||(!gridRows.empty()&&gridRows[0].size()>100)) { resultBuffer = json{{"success",false},{"error","Grid terlalu besar (max 100x100)"}}.dump(); return resultBuffer.c_str(); }
             json ir = hitungJumlahIsland(gridRows); result = json{{"success",true},{"count",ir["count"]},{"labels",ir["labels"]}};
+
+        } else if (operation == "maximum_bipartite_matching") {
+            int N = input.at("numVertices").get<int>();
+            if (N<0||N>1024) { resultBuffer = json{{"success",false},{"error","numVertices harus 0-1024"}}.dump(); return resultBuffer.c_str(); }
+            vector<pair<int,int>> edgeList;
+            if (input.contains("edges")) { for (auto& e : input["edges"]) { int u=e[0].get<int>(), v=e[1].get<int>(); if (u==v) continue; edgeList.push_back({u,v}); } }
+            json r = maximumBipartiteMatching(N, edgeList);
+            result = json{{"success",true},{"isBipartite",r["isBipartite"]},{"partitionA",r["partitionA"]},{"partitionB",r["partitionB"]},{"matchingSize",r["matchingSize"]},{"matchingEdges",r["matchingEdges"]},{"unmatchedA",r["unmatchedA"]},{"unmatchedB",r["unmatchedB"]}};
 
         } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth") {
             int N = input.at("numVertices").get<int>();
