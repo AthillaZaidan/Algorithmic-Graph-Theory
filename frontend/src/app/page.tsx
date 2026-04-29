@@ -23,12 +23,13 @@ type Operation =
   | "girth"
   | "shortest_path"
   | "min_spanning_tree"
-  | "tsp_grasp_swap";
+  | "tsp_grasp_swap"
+  | "maximum_bipartite_matching";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6";
   description: string;
 }
 
@@ -47,6 +48,7 @@ const TABS: TabDef[] = [
   { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)" },
   { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
   { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
+  { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)" },
 ];
 
 const COMPONENT_COLORS = [
@@ -362,15 +364,26 @@ export default function Home() {
 
     try {
       let data: GraphResponse;
-      try {
-        data = await callWasmEngine(body);
-      } catch {
+      const callApiRoute = async () => {
         const res = await fetch("/api/graph", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        data = await res.json();
+        return (await res.json()) as GraphResponse;
+      };
+
+      try {
+        data = await callWasmEngine(body);
+        if (
+          activeTab === "maximum_bipartite_matching" &&
+          !data.success &&
+          (data.error || "").toLowerCase().includes("operasi tidak dikenal")
+        ) {
+          data = await callApiRoute();
+        }
+      } catch {
+        data = await callApiRoute();
       }
 
       if (!data.success) {
@@ -433,7 +446,18 @@ export default function Home() {
         
         setBipartiteColors(bipartiteColorMap);
         setHighlightNodes(Array.from({ length: numVertices }, (_, i) => i));
-        setBipartiteLayoutParts(data.isBipartite ? { top: partA, bottom: partB } : undefined);
+      } else if (activeTab === "maximum_bipartite_matching") {
+        const bipartiteColorMap = new Map<number, string>();
+        const partA = (data.partitionA as number[]) || [];
+        const partB = (data.partitionB as number[]) || [];
+        const matching = (data.matchingEdges as number[][]) || [];
+
+        partA.forEach((node: number) => bipartiteColorMap.set(node, "#06b6d4"));
+        partB.forEach((node: number) => bipartiteColorMap.set(node, "#a78bfa"));
+
+        setBipartiteColors(bipartiteColorMap);
+        setHighlightEdges(matching.map(([u, v]) => [u, v]));
+        setHighlightNodes(Array.from(new Set(matching.flatMap(([u, v]) => [u, v]))));
       } else if (activeTab === "check_cycle") {
         if (data.hasCycle && data.cyclePath) {
           const cycle = data.cyclePath as number[];
@@ -724,6 +748,99 @@ export default function Home() {
                   Semua edge hanya terhubung antara Partisi A dan Partisi B (tidak ada edge dalam partisi yang sama)
                 </p>
               </div>
+            )}
+          </div>
+        );
+
+      case "maximum_bipartite_matching":
+        return (
+          <div className="space-y-3">
+            <div className={`flex items-center gap-2 text-lg font-semibold ${result.isBipartite ? "text-emerald-400" : "text-amber-400"}`}>
+              {result.isBipartite ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Matching maksimum ditemukan</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span>Graf bukan bipartit</span>
+                </>
+              )}
+            </div>
+
+            {result.isBipartite ? (
+              <>
+                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Ukuran Matching</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-300">{result.matchingSize as number}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="glass p-3 border border-cyan-400/30">
+                    <p className="text-cyan-300 font-semibold text-sm mb-2">Partisi A</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((result.partitionA as number[]) || []).map((node: number) => (
+                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-400/20 border border-cyan-400/40 text-cyan-300 text-sm font-mono font-semibold">
+                          {node}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="glass p-3 border border-violet-400/30">
+                    <p className="text-violet-300 font-semibold text-sm mb-2">Partisi B</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((result.partitionB as number[]) || []).map((node: number) => (
+                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-400/20 border border-violet-400/40 text-violet-300 text-sm font-mono font-semibold">
+                          {node}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-white/50">
+                    Edge matching ({((result.matchingEdges as number[][]) || []).length})
+                  </p>
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                    {((result.matchingEdges as number[][]) || []).map(([u, v], i) => (
+                      <motion.div
+                        key={`${u}-${v}-${i}`}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.03, duration: 0.18 }}
+                        className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono"
+                      >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
+                          {i + 1}
+                        </span>
+                        <span className="text-cyan-400">{u}</span>
+                        <span className="text-white/25">{"<->"}</span>
+                        <span className="text-violet-300">{v}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                {(((result.unmatchedA as number[]) || []).length > 0 || ((result.unmatchedB as number[]) || []).length > 0) && (
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-white/60">
+                    <p className="font-semibold text-amber-300">Node belum terpasang</p>
+                    <p className="mt-1 text-xs">
+                      A: {((result.unmatchedA as number[]) || []).join(", ") || "-"} | B: {((result.unmatchedB as number[]) || []).join(", ") || "-"}
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-white/45">
+                Maximum bipartite matching hanya dapat dijalankan pada graf bipartit. Gunakan generator graf bipartit lengkap atau hapus edge yang membuat konflik partisi.
+              </p>
             )}
           </div>
         );
@@ -1229,6 +1346,53 @@ export default function Home() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     activeTab === tab.id
                       ? "bg-rose-400/15 border border-rose-400/40 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.16)]"
+                      : "glass-btn text-white/60 hover:text-white/90"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Tugas 6 */}
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.4 }}
+          >
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 6 - Matching</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TABS.filter((t) => t.group === "tugas6").map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setResult(null);
+                    setError("");
+                    setHighlightNodes([]);
+                    setHighlightEdges([]);
+                    setComponentColors(new Map());
+                    setIslandLabels(undefined);
+                    setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
+                    setDiameterPath([]);
+                    setDiameterLength(undefined);
+                    setGirthValue(undefined);
+                    setGirthCycle([]);
+                    setMstEdges([]);
+                    setMstTotalWeight(undefined);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
+                    clearAnimations();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? "bg-emerald-400/15 border border-emerald-400/40 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.16)]"
                       : "glass-btn text-white/60 hover:text-white/90"
                   }`}
                 >
