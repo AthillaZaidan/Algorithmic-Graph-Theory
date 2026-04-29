@@ -778,33 +778,9 @@ export default function Home() {
                   <p className="mt-1 font-mono text-2xl font-bold text-emerald-300">{result.matchingSize as number}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="glass p-3 border border-cyan-400/30">
-                    <p className="text-cyan-300 font-semibold text-sm mb-2">Partisi A</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {((result.partitionA as number[]) || []).map((node: number) => (
-                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-400/20 border border-cyan-400/40 text-cyan-300 text-sm font-mono font-semibold">
-                          {node}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="glass p-3 border border-violet-400/30">
-                    <p className="text-violet-300 font-semibold text-sm mb-2">Partisi B</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {((result.partitionB as number[]) || []).map((node: number) => (
-                        <span key={node} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-400/20 border border-violet-400/40 text-violet-300 text-sm font-mono font-semibold">
-                          {node}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
                 <div>
                   <p className="mb-2 text-xs uppercase tracking-wide text-white/50">
-                    Edge matching ({((result.matchingEdges as number[][]) || []).length})
+                    Pasangan edge terpilih ({((result.matchingEdges as number[][]) || []).length})
                   </p>
                   <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
                     {((result.matchingEdges as number[][]) || []).map(([u, v], i) => (
@@ -828,9 +804,9 @@ export default function Home() {
 
                 {(((result.unmatchedA as number[]) || []).length > 0 || ((result.unmatchedB as number[]) || []).length > 0) && (
                   <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-white/60">
-                    <p className="font-semibold text-amber-300">Node belum terpasang</p>
+                    <p className="font-semibold text-amber-300">Node tidak terpilih</p>
                     <p className="mt-1 text-xs">
-                      A: {((result.unmatchedA as number[]) || []).join(", ") || "-"} | B: {((result.unmatchedB as number[]) || []).join(", ") || "-"}
+                      {[...((result.unmatchedA as number[]) || []), ...((result.unmatchedB as number[]) || [])].join(", ") || "-"}
                     </p>
                   </div>
                 )}
