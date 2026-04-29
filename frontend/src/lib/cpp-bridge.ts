@@ -45,10 +45,6 @@ export interface GraphResponse {
   totalCost?: number;
   tour?: number[];
   tourEdges?: number[][];
-  matchingSize?: number;
-  matchingEdges?: number[][];
-  unmatchedA?: number[];
-  unmatchedB?: number[];
 }
 
 export async function callCppEngine(input: GraphRequest): Promise<GraphResponse> {

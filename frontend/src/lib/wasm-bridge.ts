@@ -42,10 +42,6 @@ export interface GraphResponse {
   totalCost?: number;
   tour?: number[];
   tourEdges?: number[][];
-  matchingSize?: number;
-  matchingEdges?: number[][];
-  unmatchedA?: number[];
-  unmatchedB?: number[];
 }
 
 interface EmscriptenModule {
