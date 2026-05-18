@@ -153,6 +153,42 @@ function maximumBipartiteMatching(body: GraphRequest): GraphResponse {
   };
 }
 
+function graphBandwidth(body: GraphRequest): GraphResponse {
+  const numVertices = body.numVertices ?? 0;
+  const edges = (body.edges ?? [])
+    .map((edge) => [edge[0], edge[1]])
+    .filter(([u, v]) =>
+      Number.isInteger(u) &&
+      Number.isInteger(v) &&
+      u >= 0 &&
+      u < numVertices &&
+      v >= 0 &&
+      v < numVertices &&
+      u !== v
+    );
+
+  let bandwidth = 0;
+  const bandwidthEdges: number[][] = [];
+
+  for (const [u, v] of edges) {
+    const width = Math.abs(u - v);
+
+    if (width > bandwidth) {
+      bandwidth = width;
+      bandwidthEdges.length = 0;
+      bandwidthEdges.push([u, v]);
+    } else if (width === bandwidth) {
+      bandwidthEdges.push([u, v]);
+    }
+  }
+
+  return {
+    success: true,
+    bandwidth,
+    bandwidthEdges,
+  };
+}
+
 interface TimetableEdge {
   teacher: number;
   class: number;
@@ -445,6 +481,10 @@ export async function POST(request: NextRequest) {
 
     if (body.operation === "maximum_bipartite_matching") {
       return NextResponse.json(maximumBipartiteMatching(body));
+    }
+
+    if (body.operation === "bandwidth") {
+      return NextResponse.json(graphBandwidth(body));
     }
 
     if (body.operation === "timetabling_edge_coloring") {
