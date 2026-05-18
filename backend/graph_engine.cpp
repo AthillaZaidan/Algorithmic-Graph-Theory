@@ -915,6 +915,32 @@ json computeDiameter(int N, const vector<pair<int,int>>& edgeList) {
     };
 }
 
+// Compute graph bandwidth for the current vertex labeling.
+json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
+    int bandwidth = 0;
+    vector<vector<int>> criticalEdges;
+
+    for (auto& e : edgeList) {
+        int u = e.first;
+        int v = e.second;
+        if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
+
+        int width = abs(u - v);
+        if (width > bandwidth) {
+            bandwidth = width;
+            criticalEdges.clear();
+            criticalEdges.push_back({u, v});
+        } else if (width == bandwidth) {
+            criticalEdges.push_back({u, v});
+        }
+    }
+
+    return json{
+        {"bandwidth", bandwidth},
+        {"bandwidthEdges", criticalEdges}
+    };
+}
+
 // Compute Girth (shortest cycle)
 json computeGirth(int N, const vector<pair<int,int>>& edgeList) {
     adj.assign(N, vector<int>());
@@ -1330,8 +1356,8 @@ int main() {
                 };
             }
 
-        // ===== TUGAS 3: check bipartite, cycle, diameter & girth =====
-        } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth") {
+        // ===== TUGAS 3 & 7: structural graph metrics =====
+        } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth" || operation == "bandwidth") {
 
             int N = input.at("numVertices").get<int>();
             if (N < 0 || N > 1000) {
@@ -1377,6 +1403,13 @@ int main() {
                     {"success", true},
                     {"girth", gres["girth"]},
                     {"cycle", gres["cycle"]}
+                };
+            } else if (operation == "bandwidth") {
+                json bres = computeBandwidth(N, edgeList);
+                result = json{
+                    {"success", true},
+                    {"bandwidth", bres["bandwidth"]},
+                    {"bandwidthEdges", bres["bandwidthEdges"]}
                 };
             }
 
