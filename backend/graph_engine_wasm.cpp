@@ -520,6 +520,23 @@ json computeDiameter(int N, const vector<pair<int,int>>& edgeList) {
     return {{"diameter", maxDist}, {"path", bestPath}};
 }
 
+json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
+    int bandwidth = 0;
+    vector<vector<int>> criticalEdges;
+    for (const auto& [u, v] : edgeList) {
+        if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
+        int width = abs(u - v);
+        if (width > bandwidth) {
+            bandwidth = width;
+            criticalEdges.clear();
+            criticalEdges.push_back({u, v});
+        } else if (width == bandwidth) {
+            criticalEdges.push_back({u, v});
+        }
+    }
+    return {{"bandwidth", bandwidth}, {"bandwidthEdges", criticalEdges}};
+}
+
 json computeGirth(int N, const vector<pair<int,int>>& edgeList) {
     vector<vector<int>> adj(N);
     for (const auto& [u, v] : edgeList) { if (u >= 0 && u < N && v >= 0 && v < N) { adj[u].push_back(v); adj[v].push_back(u); } }
@@ -714,7 +731,7 @@ const char* processGraph(const char* inputJson) {
             }
             result = solveTimetabling(teacherCount, classCount, requirements, roomLimit);
 
-        } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth") {
+        } else if (operation == "check_bipartite" || operation == "check_cycle" || operation == "diameter" || operation == "girth" || operation == "bandwidth") {
             int N = input.at("numVertices").get<int>();
             if (N<0||N>1024) { resultBuffer = json{{"success",false},{"error","numVertices harus 0-1024"}}.dump(); return resultBuffer.c_str(); }
             vector<pair<int,int>> edgeList;
@@ -722,7 +739,8 @@ const char* processGraph(const char* inputJson) {
             if (operation=="check_bipartite") { json r=checkBipartite(N,edgeList); result=json{{"success",true},{"isBipartite",r["isBipartite"]},{"partitionA",r["partitionA"]},{"partitionB",r["partitionB"]}}; }
             else if (operation=="check_cycle") { json r=checkCycle(N,edgeList); result=json{{"success",true},{"hasCycle",r["hasCycle"]},{"cyclePath",r["cyclePath"]}}; }
             else if (operation=="diameter") { json r=computeDiameter(N,edgeList); result=json{{"success",true},{"diameter",r["diameter"]},{"path",r["path"]}}; }
-            else { json r=computeGirth(N,edgeList); result=json{{"success",true},{"girth",r["girth"]},{"cycle",r["cycle"]}}; }
+            else if (operation=="girth") { json r=computeGirth(N,edgeList); result=json{{"success",true},{"girth",r["girth"]},{"cycle",r["cycle"]}}; }
+            else { json r=computeBandwidth(N,edgeList); result=json{{"success",true},{"bandwidth",r["bandwidth"]},{"bandwidthEdges",r["bandwidthEdges"]}}; }
 
         } else if (operation == "shortest_path") {
             int N=input.at("numVertices").get<int>(); if (N<=0||N>1024) { resultBuffer = json{{"success",false},{"error","numVertices harus 1-1024"}}.dump(); return resultBuffer.c_str(); }

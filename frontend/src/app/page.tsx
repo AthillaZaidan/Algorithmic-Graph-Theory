@@ -28,12 +28,13 @@ type Operation =
   | "min_spanning_tree"
   | "tsp_grasp_swap"
   | "maximum_bipartite_matching"
-  | "timetabling_edge_coloring";
+  | "timetabling_edge_coloring"
+  | "bandwidth";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7";
   description: string;
 }
 
@@ -54,6 +55,7 @@ const TABS: TabDef[] = [
   { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
   { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)" },
   { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas" },
+  { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Hitung bandwidth graf dari labeling node saat ini" },
 ];
 
 const COMPONENT_COLORS = [
@@ -422,7 +424,7 @@ export default function Home() {
       try {
         data = await callWasmEngine(body);
         if (
-          (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring") &&
+          (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring" || activeTab === "bandwidth") &&
           !data.success &&
           (data.error || "").toLowerCase().includes("operasi tidak dikenal")
         ) {
@@ -530,6 +532,10 @@ export default function Home() {
           setHighlightEdges(diaEdges);
           setDiameterLength(data.diameter as number);
         }
+      } else if (activeTab === "bandwidth") {
+        const bwEdges = (data.bandwidthEdges as number[][]) || [];
+        setHighlightEdges(bwEdges);
+        setHighlightNodes(Array.from(new Set(bwEdges.flatMap(([u, v]) => [u, v]))));
       } else if (activeTab === "girth") {
         if (data.girth && data.girth > 0 && data.cycle) {
           const cycle = data.cycle as number[];
@@ -1035,6 +1041,34 @@ export default function Home() {
           </div>
         );
 
+      case "bandwidth": {
+        const bwEdges = (result.bandwidthEdges as number[][]) || [];
+        return (
+          <div className="space-y-3">
+            <p className="text-white/60 text-xs uppercase tracking-wide">
+              Bandwidth graf: <span className="text-cyan-300 font-bold text-lg">{result.bandwidth ?? 0}</span>
+            </p>
+            <div className="glass p-4 border-cyan-400/30">
+              <p className="text-cyan-300 font-semibold text-sm mb-2">Edge dengan selisih label maksimum:</p>
+              {bwEdges.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {bwEdges.map(([u, v], i) => (
+                    <span key={`${u}-${v}-${i}`} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400/15 border border-cyan-400/30 px-3 py-2 text-cyan-100 text-sm font-mono">
+                      {u}
+                      <span className="text-cyan-400/60">-</span>
+                      {v}
+                      <span className="text-white/40 text-xs">|{Math.abs(u - v)}|</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-white/45 text-sm">Tidak ada edge pada graf.</p>
+              )}
+            </div>
+          </div>
+        );
+      }
+
       case "girth":
         return (
           <div className="space-y-3">
@@ -1503,6 +1537,53 @@ export default function Home() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     activeTab === tab.id
                       ? "bg-emerald-400/15 border border-emerald-400/40 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.16)]"
+                      : "glass-btn text-white/60 hover:text-white/90"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Tugas 7 */}
+          <motion.div
+            className="flex-1"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.45 }}
+          >
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 7 - Bandwidth</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TABS.filter((t) => t.group === "tugas7").map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setResult(null);
+                    setError("");
+                    setHighlightNodes([]);
+                    setHighlightEdges([]);
+                    setComponentColors(new Map());
+                    setIslandLabels(undefined);
+                    setIslandCount(undefined);
+                    setBipartiteColors(new Map());
+                    setCyclePathNodes([]);
+                    setDiameterPath([]);
+                    setDiameterLength(undefined);
+                    setGirthValue(undefined);
+                    setGirthCycle([]);
+                    setMstEdges([]);
+                    setMstTotalWeight(undefined);
+                    setTspTour([]);
+                    setTspTourEdges([]);
+                    setTspTotalCost(undefined);
+                    setTspStartNode(undefined);
+                    clearAnimations();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.16)]"
                       : "glass-btn text-white/60 hover:text-white/90"
                   }`}
                 >
