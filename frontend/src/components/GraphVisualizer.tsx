@@ -26,6 +26,7 @@ interface GraphVisualizerProps {
   nodePositions?: { x: number; y: number }[];
   nodeLabels?: string[];
   showCoordGrid?: boolean;
+  lockNodePositions?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +53,7 @@ export default function GraphVisualizer({
   nodePositions,
   nodeLabels,
   showCoordGrid,
+  lockNodePositions = nodePositions != null && nodePositions.length > 0,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
@@ -147,11 +149,12 @@ export default function GraphVisualizer({
 
   const fixedPositionMap = useMemo(() => {
     const map = new Map<number, { x: number; y: number }>();
+    if (!lockNodePositions) return map;
     nodePositions?.forEach((pos, index) => {
       map.set(index, pos);
     });
     return map;
-  }, [nodePositions]);
+  }, [lockNodePositions, nodePositions]);
 
   const graphData = useMemo(() => {
     const nodes: AnyNode[] = Array.from({ length: numVertices }, (_, i) => {
@@ -160,14 +163,16 @@ export default function GraphVisualizer({
         const pos = nodePositions[i];
         n.x = pos.x;
         n.y = pos.y;
-        n.fx = pos.x;
-        n.fy = pos.y;
+        if (lockNodePositions) {
+          n.fx = pos.x;
+          n.fy = pos.y;
+        }
       }
       return n;
     });
     const links: AnyLink[] = edges.map(([source, target]) => ({ source, target }));
     return { nodes, links };
-  }, [numVertices, edges, nodePositions, nodeLabels]);
+  }, [numVertices, edges, nodePositions, nodeLabels, lockNodePositions]);
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -426,8 +431,8 @@ export default function GraphVisualizer({
           }}
           linkCanvasObjectMode={() => "replace"}
           backgroundColor="rgba(0,0,0,0)"
-          cooldownTime={nodePositions ? 0 : 2000}
-          enableNodeDrag={!nodePositions}
+          cooldownTime={lockNodePositions ? 0 : 2000}
+          enableNodeDrag={!lockNodePositions}
           enableZoomInteraction
           enablePanInteraction
         />
