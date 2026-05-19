@@ -105,6 +105,12 @@ export default function Home() {
   const [girthCycle, setGirthCycle] = useState<number[]>([]);
   const [mstEdges, setMstEdges] = useState<number[][]>([]);
   const [, setMstTotalWeight] = useState<number | undefined>();
+  const [bandwidthScanEdge, setBandwidthScanEdge] = useState<number[] | undefined>();
+  const [bandwidthBestEdges, setBandwidthBestEdges] = useState<number[][]>([]);
+  const [bandwidthBestValue, setBandwidthBestValue] = useState<number | undefined>();
+  const [bandwidthNodePositions, setBandwidthNodePositions] = useState<{ x: number; y: number }[] | undefined>();
+  const [bandwidthAnimatedOrder, setBandwidthAnimatedOrder] = useState<number[]>([]);
+  const [graphLayoutVersion, setGraphLayoutVersion] = useState(0);
   const [tspTour, setTspTour] = useState<number[]>([]);
   const [tspTourEdges, setTspTourEdges] = useState<number[][]>([]);
   const [tspTotalCost, setTspTotalCost] = useState<number | undefined>();
@@ -336,23 +342,180 @@ export default function Home() {
 
   const animationRef = useRef<NodeJS.Timeout[]>([]);
 
-  const clearAnimations = () => {
+  const clearAnimations = useCallback(() => {
     animationRef.current.forEach(clearTimeout);
     animationRef.current = [];
-  };
+  }, []);
 
+  const clearBandwidthLayout = useCallback(() => {
+    setBandwidthScanEdge(undefined);
+    setBandwidthBestEdges([]);
+    setBandwidthBestValue(undefined);
+    setBandwidthNodePositions(undefined);
+    setBandwidthAnimatedOrder([]);
+    setGraphLayoutVersion((v) => v + 1);
+  }, []);
 
 
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
+    clearAnimations();
     setNumVertices(nv);
     setEdges(e);
     setIsWeightedMode(e.some((edge) => edge[2] !== undefined));
-  }, []);
+    setResult(null);
+    setHighlightNodes([]);
+    setHighlightEdges([]);
+    clearBandwidthLayout();
+  }, [clearAnimations, clearBandwidthLayout]);
 
   const handleFileLoaded = useCallback((nv: number, e: number[][], weighted: boolean) => {
+    clearAnimations();
     setNumVertices(nv);
     setEdges(e);
     setIsWeightedMode(weighted);
+    setResult(null);
+    setHighlightNodes([]);
+    setHighlightEdges([]);
+    clearBandwidthLayout();
+  }, [clearAnimations, clearBandwidthLayout]);
+
+  const bandwidthForOrder = useCallback((order: number[], edgeList: number[][]) => {
+    const pos = new Map<number, number>();
+    order.forEach((node, index) => pos.set(node, index));
+    return edgeList.reduce((best, [u, v]) => {
+      const pu = pos.get(u);
+      const pv = pos.get(v);
+      if (pu === undefined || pv === undefined) return best;
+      return Math.max(best, Math.abs(pu - pv));
+    }, 0);
+  }, []);
+
+  const criticalEdgesForOrder = useCallback((order: number[], edgeList: number[][], bandwidth: number) => {
+    const pos = new Map<number, number>();
+    order.forEach((node, index) => pos.set(node, index));
+    return edgeList
+      .map((edge) => [edge[0], edge[1]])
+      .filter(([u, v]) => {
+        const pu = pos.get(u);
+        const pv = pos.get(v);
+        return pu !== undefined && pv !== undefined && Math.abs(pu - pv) === bandwidth;
+      });
+  }, []);
+
+  const cuthillMckeeOrder = useCallback((vertexCount: number, edgeList: number[][]) => {
+    const adj = Array.from({ length: vertexCount }, () => new Set<number>());
+    edgeList.forEach(([u, v]) => {
+      if (u >= 0 && u < vertexCount && v >= 0 && v < vertexCount && u !== v) {
+        adj[u].add(v);
+        adj[v].add(u);
+      }
+    });
+
+    const degree = adj.map((neighbors) => neighbors.size);
+    const visited = Array.from({ length: vertexCount }, () => false);
+    const order: number[] = [];
+
+    while (order.length < vertexCount) {
+      let start = -1;
+      for (let i = 0; i < vertexCount; i++) {
+        if (!visited[i] && (start === -1 || degree[i] < degree[start] || (degree[i] === degree[start] && i < start))) {
+          start = i;
+        }
+      }
+
+      const queue = [start];
+      visited[start] = true;
+
+      for (let head = 0; head < queue.length; head++) {
+        const u = queue[head];
+        order.push(u);
+        const neighbors = Array.from(adj[u]).filter((v) => !visited[v]);
+        neighbors.sort((a, b) => degree[a] - degree[b] || a - b);
+        neighbors.forEach((v) => {
+          visited[v] = true;
+          queue.push(v);
+        });
+      }
+    }
+
+    return order;
+  }, []);
+
+  const solveBandwidthLocally = useCallback((vertexCount: number, edgeList: number[][]): GraphResponse => {
+    const initialOrder = Array.from({ length: vertexCount }, (_, i) => i);
+    const initialBandwidth = bandwidthForOrder(initialOrder, edgeList);
+    let bestOrder = [...initialOrder];
+    let bestBandwidth = initialBandwidth;
+    const steps: number[][] = [initialOrder];
+    const isOptimal = vertexCount <= 9;
+    const method = isOptimal ? "exact_bruteforce" : "reverse_cuthill_mckee";
+
+    if (isOptimal) {
+      const perm = [...initialOrder];
+      const permute = (start: number) => {
+        if (start === perm.length) {
+          const bw = bandwidthForOrder(perm, edgeList);
+          if (bw < bestBandwidth) {
+            bestBandwidth = bw;
+            bestOrder = [...perm];
+            if (steps.length < 24) steps.push([...perm]);
+          }
+          return;
+        }
+        for (let i = start; i < perm.length; i++) {
+          [perm[start], perm[i]] = [perm[i], perm[start]];
+          permute(start + 1);
+          [perm[start], perm[i]] = [perm[i], perm[start]];
+        }
+      };
+      permute(0);
+    } else {
+      const cm = cuthillMckeeOrder(vertexCount, edgeList);
+      const rcm = [...cm].reverse();
+      const candidates = [cm, rcm];
+      candidates.forEach((order) => {
+        steps.push(order);
+        const bw = bandwidthForOrder(order, edgeList);
+        if (bw < bestBandwidth) {
+          bestBandwidth = bw;
+          bestOrder = [...order];
+        }
+      });
+    }
+
+    const positions = Array.from({ length: vertexCount }, () => 0);
+    bestOrder.forEach((node, index) => {
+      positions[node] = index;
+    });
+
+    if (steps.length === 0 || steps[steps.length - 1].join(",") !== bestOrder.join(",")) {
+      steps.push(bestOrder);
+    }
+
+    return {
+      success: true,
+      bandwidth: bestBandwidth,
+      initialBandwidth,
+      bandwidthEdges: criticalEdgesForOrder(bestOrder, edgeList, bestBandwidth),
+      bandwidthOrder: bestOrder,
+      bandwidthPositions: positions,
+      bandwidthSteps: steps,
+      isOptimal,
+      method,
+    };
+  }, [bandwidthForOrder, criticalEdgesForOrder, cuthillMckeeOrder]);
+
+  const positionsForOrder = useCallback((order: number[]) => {
+    const radius = Math.max(75, Math.min(155, order.length * 18));
+    const positions = Array.from({ length: order.length }, () => ({ x: 0, y: 0 }));
+    order.forEach((node, index) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * index) / Math.max(order.length, 1);
+      positions[node] = {
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+      };
+    });
+    return positions;
   }, []);
 
   const runOperation = async () => {
@@ -372,6 +535,11 @@ export default function Home() {
     setGirthCycle([]);
     setMstEdges([]);
     setMstTotalWeight(undefined);
+    setBandwidthScanEdge(undefined);
+    setBandwidthBestEdges([]);
+    setBandwidthBestValue(undefined);
+    setBandwidthNodePositions(undefined);
+    setBandwidthAnimatedOrder([]);
     setTspTour([]);
     setTspTourEdges([]);
     setTspTotalCost(undefined);
@@ -422,16 +590,38 @@ export default function Home() {
       };
 
       try {
-        data = await callWasmEngine(body);
-        if (
-          (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring" || activeTab === "bandwidth") &&
-          !data.success &&
-          (data.error || "").toLowerCase().includes("operasi tidak dikenal")
-        ) {
+        if (activeTab === "bandwidth") {
           data = await callApiRoute();
+          if (
+            !data.success ||
+            data.initialBandwidth === undefined ||
+            !data.bandwidthOrder ||
+            !data.bandwidthSteps
+          ) {
+            data = solveBandwidthLocally(
+              numVertices,
+              (body.edges ?? []).map((edge) => [edge[0], edge[1]])
+            );
+          }
+        } else {
+          data = await callWasmEngine(body);
+          if (
+            (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring") &&
+            !data.success &&
+            (data.error || "").toLowerCase().includes("operasi tidak dikenal")
+          ) {
+            data = await callApiRoute();
+          }
         }
       } catch {
-        data = await callApiRoute();
+        if (activeTab === "bandwidth") {
+          data = solveBandwidthLocally(
+            numVertices,
+            (body.edges ?? []).map((edge) => [edge[0], edge[1]])
+          );
+        } else {
+          data = await callApiRoute();
+        }
       }
 
       if (!data.success) {
@@ -534,8 +724,46 @@ export default function Home() {
         }
       } else if (activeTab === "bandwidth") {
         const bwEdges = (data.bandwidthEdges as number[][]) || [];
-        setHighlightEdges(bwEdges);
-        setHighlightNodes(Array.from(new Set(bwEdges.flatMap(([u, v]) => [u, v]))));
+        const validEdges = edges
+          .map((edge) => [edge[0], edge[1]])
+          .filter(([u, v]) =>
+            Number.isInteger(u) &&
+            Number.isInteger(v) &&
+            u >= 0 &&
+            u < numVertices &&
+            v >= 0 &&
+            v < numVertices &&
+            u !== v
+          );
+        const steps = ((data.bandwidthSteps as number[][]) || []).filter((step) => step.length === numVertices);
+        const finalOrder = (data.bandwidthOrder as number[]) || Array.from({ length: numVertices }, (_, i) => i);
+        const animationSteps = steps.length > 0 ? steps : [finalOrder];
+
+        animationSteps.forEach((order, i) => {
+          const t = setTimeout(() => {
+            const currentBandwidth = bandwidthForOrder(order, validEdges);
+            const currentCriticalEdges = criticalEdgesForOrder(order, validEdges, currentBandwidth);
+            setBandwidthScanEdge(undefined);
+            setBandwidthAnimatedOrder(order);
+            setBandwidthNodePositions(positionsForOrder(order));
+            setBandwidthBestValue(currentBandwidth);
+            setBandwidthBestEdges(currentCriticalEdges);
+            setHighlightEdges(currentCriticalEdges);
+            setHighlightNodes(order);
+          }, i * 700);
+          animationRef.current.push(t);
+        });
+
+        const finish = setTimeout(() => {
+          setBandwidthScanEdge(undefined);
+          setBandwidthBestValue(data.bandwidth as number);
+          setBandwidthBestEdges(bwEdges);
+          setBandwidthAnimatedOrder(finalOrder);
+          setBandwidthNodePositions(positionsForOrder(finalOrder));
+          setHighlightEdges(bwEdges);
+          setHighlightNodes(Array.from(new Set(bwEdges.flatMap(([u, v]) => [u, v]))));
+        }, animationSteps.length * 700 + 250);
+        animationRef.current.push(finish);
       } else if (activeTab === "girth") {
         if (data.girth && data.girth > 0 && data.cycle) {
           const cycle = data.cycle as number[];
@@ -1043,11 +1271,42 @@ export default function Home() {
 
       case "bandwidth": {
         const bwEdges = (result.bandwidthEdges as number[][]) || [];
+        const beforeOrder = Array.from({ length: numVertices }, (_, i) => i);
+        const afterOrder = (result.bandwidthOrder as number[]) || beforeOrder;
+        const finalPositions = (result.bandwidthPositions as number[]) || beforeOrder;
         return (
           <div className="space-y-3">
             <p className="text-white/60 text-xs uppercase tracking-wide">
-              Bandwidth graf: <span className="text-cyan-300 font-bold text-lg">{result.bandwidth ?? 0}</span>
+              Bandwidth awal: <span className="text-white/80 font-bold text-lg">{result.initialBandwidth ?? 0}</span>
+              <span className="mx-2 text-white/30">→</span>
+              Bandwidth terbaik: <span className="text-cyan-300 font-bold text-lg">{result.bandwidth ?? 0}</span>
             </p>
+            <p className="text-white/40 text-xs">
+              Metode: {result.isOptimal ? "Exact brute force (optimal)" : "Reverse Cuthill-McKee heuristic"}
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="glass p-3 border-white/10">
+                <p className="text-white/45 text-xs uppercase tracking-wide mb-2">Before</p>
+                <p className="font-mono text-sm text-white/80 break-words">{beforeOrder.join(" - ")}</p>
+              </div>
+              <div className="glass p-3 border-cyan-400/25">
+                <p className="text-cyan-300 text-xs uppercase tracking-wide mb-2">After</p>
+                <p className="font-mono text-sm text-cyan-100 break-words">{afterOrder.join(" - ")}</p>
+              </div>
+            </div>
+            {(bandwidthAnimatedOrder.length > 0 || bandwidthBestValue !== undefined) && (
+              <div className="glass p-3 border-yellow-400/20">
+                <p className="text-sm text-white/70">
+                  Susunan animasi:{" "}
+                  <span className="font-mono text-yellow-300">
+                    {(bandwidthAnimatedOrder.length > 0 ? bandwidthAnimatedOrder : (result.bandwidthOrder as number[]) || []).join(" - ")}
+                  </span>
+                </p>
+                <p className="text-xs text-white/45 mt-1">
+                  Bandwidth susunan ini: <span className="font-mono text-yellow-300">{bandwidthBestValue ?? result.bandwidth ?? 0}</span>
+                </p>
+              </div>
+            )}
             <div className="glass p-4 border-cyan-400/30">
               <p className="text-cyan-300 font-semibold text-sm mb-2">Edge dengan selisih label maksimum:</p>
               {bwEdges.length > 0 ? (
@@ -1057,7 +1316,7 @@ export default function Home() {
                       {u}
                       <span className="text-cyan-400/60">-</span>
                       {v}
-                      <span className="text-white/40 text-xs">|{Math.abs(u - v)}|</span>
+                      <span className="text-white/40 text-xs">|{Math.abs((finalPositions[u] ?? u) - (finalPositions[v] ?? v))}|</span>
                     </span>
                   ))}
                 </div>
@@ -1297,6 +1556,11 @@ export default function Home() {
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
                     setCyclePathNodes([]);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1338,6 +1602,11 @@ export default function Home() {
                     setIslandCount(undefined);
                     setBipartiteColors(new Map());
                     setCyclePathNodes([]);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1383,6 +1652,11 @@ export default function Home() {
                     setDiameterLength(undefined);
                     setGirthValue(undefined);
                     setGirthCycle([]);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1434,6 +1708,11 @@ export default function Home() {
                     setGirthCycle([]);
                     setMstEdges([]);
                     setMstTotalWeight(undefined);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1481,6 +1760,11 @@ export default function Home() {
                     setGirthCycle([]);
                     setMstEdges([]);
                     setMstTotalWeight(undefined);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1528,6 +1812,11 @@ export default function Home() {
                     setGirthCycle([]);
                     setMstEdges([]);
                     setMstTotalWeight(undefined);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1575,6 +1864,11 @@ export default function Home() {
                     setGirthCycle([]);
                     setMstEdges([]);
                     setMstTotalWeight(undefined);
+                    setBandwidthScanEdge(undefined);
+                    setBandwidthBestEdges([]);
+                    setBandwidthBestValue(undefined);
+                    setBandwidthNodePositions(undefined);
+                    setBandwidthAnimatedOrder([]);
                     setTspTour([]);
                     setTspTourEdges([]);
                     setTspTotalCost(undefined);
@@ -1968,6 +2262,7 @@ export default function Home() {
           {/* Graph Visualizer (for graph operations) */}
           {isGraphOp && (
             <GraphVisualizer
+              key={`${activeTab}-${graphLayoutVersion}`}
               numVertices={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates.length : numVertices}
               edges={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordDisplayEdges : edges}
               highlightNodes={highlightNodes}
@@ -1978,11 +2273,20 @@ export default function Home() {
               diameterPathNodes={diameterPath}
               girthCycleNodes={girthCycle}
               mstEdges={mstEdges}
+              bandwidthScanEdge={bandwidthScanEdge}
+              bandwidthBestEdges={bandwidthBestEdges}
               tspTourNodes={tspTour}
               tspTourEdges={tspTourEdges}
               tspStartNode={tspStartNode}
-              nodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates : undefined}
+              nodePositions={
+                activeTab === "bandwidth"
+                  ? bandwidthNodePositions
+                  : activeTab === "tsp_grasp_swap" && tspMode === "coordinate"
+                  ? coordinates
+                  : undefined
+              }
               nodeLabels={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0 ? cityNames : undefined}
+              showCoordGrid={activeTab === "bandwidth" ? false : undefined}
             />
           )}
 

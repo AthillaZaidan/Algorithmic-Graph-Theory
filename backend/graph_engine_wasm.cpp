@@ -520,21 +520,114 @@ json computeDiameter(int N, const vector<pair<int,int>>& edgeList) {
     return {{"diameter", maxDist}, {"path", bestPath}};
 }
 
-json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
+int bandwidthForOrder(int N, const vector<pair<int,int>>& edgeList, const vector<int>& order) {
+    vector<int> pos(N, 0);
+    for (int i = 0; i < N; i++) pos[order[i]] = i;
     int bandwidth = 0;
+    for (const auto& [u, v] : edgeList) {
+        if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
+        bandwidth = max(bandwidth, abs(pos[u] - pos[v]));
+    }
+    return bandwidth;
+}
+
+vector<vector<int>> bandwidthCriticalEdges(int N, const vector<pair<int,int>>& edgeList, const vector<int>& order, int bandwidth) {
+    vector<int> pos(N, 0);
+    for (int i = 0; i < N; i++) pos[order[i]] = i;
     vector<vector<int>> criticalEdges;
     for (const auto& [u, v] : edgeList) {
         if (u < 0 || u >= N || v < 0 || v >= N || u == v) continue;
-        int width = abs(u - v);
-        if (width > bandwidth) {
-            bandwidth = width;
-            criticalEdges.clear();
-            criticalEdges.push_back({u, v});
-        } else if (width == bandwidth) {
-            criticalEdges.push_back({u, v});
+        if (abs(pos[u] - pos[v]) == bandwidth) criticalEdges.push_back({u, v});
+    }
+    return criticalEdges;
+}
+
+vector<int> cuthillMckeeOrder(int N, const vector<pair<int,int>>& edgeList) {
+    vector<vector<int>> localAdj(N);
+    for (const auto& [u, v] : edgeList) {
+        if (u >= 0 && u < N && v >= 0 && v < N && u != v) {
+            localAdj[u].push_back(v);
+            localAdj[v].push_back(u);
         }
     }
-    return {{"bandwidth", bandwidth}, {"bandwidthEdges", criticalEdges}};
+    vector<int> degree(N);
+    for (int i = 0; i < N; i++) {
+        sort(localAdj[i].begin(), localAdj[i].end());
+        localAdj[i].erase(unique(localAdj[i].begin(), localAdj[i].end()), localAdj[i].end());
+        degree[i] = (int)localAdj[i].size();
+    }
+    vector<bool> visited(N, false);
+    vector<int> order;
+    order.reserve(N);
+    while ((int)order.size() < N) {
+        int start = -1;
+        for (int i = 0; i < N; i++) if (!visited[i] && (start == -1 || degree[i] < degree[start] || (degree[i] == degree[start] && i < start))) start = i;
+        queue<int> q;
+        visited[start] = true;
+        q.push(start);
+        while (!q.empty()) {
+            int u = q.front(); q.pop();
+            order.push_back(u);
+            vector<int> neighbors;
+            for (int v : localAdj[u]) if (!visited[v]) neighbors.push_back(v);
+            sort(neighbors.begin(), neighbors.end(), [&](int a, int b) {
+                if (degree[a] != degree[b]) return degree[a] < degree[b];
+                return a < b;
+            });
+            for (int v : neighbors) { visited[v] = true; q.push(v); }
+        }
+    }
+    return order;
+}
+
+json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
+    vector<int> initialOrder(N);
+    iota(initialOrder.begin(), initialOrder.end(), 0);
+    int initialBandwidth = bandwidthForOrder(N, edgeList, initialOrder);
+    vector<int> bestOrder = initialOrder;
+    int bestBandwidth = initialBandwidth;
+    vector<vector<int>> steps;
+    steps.push_back(initialOrder);
+    bool isOptimal = N <= 9;
+    string method = isOptimal ? "exact_bruteforce" : "reverse_cuthill_mckee";
+
+    if (isOptimal) {
+        vector<int> perm = initialOrder;
+        do {
+            int bw = bandwidthForOrder(N, edgeList, perm);
+            if (bw < bestBandwidth) {
+                bestBandwidth = bw;
+                bestOrder = perm;
+                if ((int)steps.size() < 24) steps.push_back(bestOrder);
+                if (bestBandwidth == 0) break;
+            }
+        } while (next_permutation(perm.begin(), perm.end()));
+    } else {
+        vector<int> cm = cuthillMckeeOrder(N, edgeList);
+        vector<int> rcm = cm;
+        reverse(rcm.begin(), rcm.end());
+        int cmBandwidth = bandwidthForOrder(N, edgeList, cm);
+        int rcmBandwidth = bandwidthForOrder(N, edgeList, rcm);
+        steps.push_back(cm);
+        steps.push_back(rcm);
+        if (cmBandwidth < bestBandwidth) { bestBandwidth = cmBandwidth; bestOrder = cm; }
+        if (rcmBandwidth < bestBandwidth) { bestBandwidth = rcmBandwidth; bestOrder = rcm; }
+    }
+
+    vector<int> positions(N, 0);
+    for (int i = 0; i < N; i++) positions[bestOrder[i]] = i;
+    if (steps.empty() || steps.back() != bestOrder) steps.push_back(bestOrder);
+
+    return {
+        {"bandwidth", bestBandwidth},
+        {"initialBandwidth", initialBandwidth},
+        {"bandwidthEdges", bandwidthCriticalEdges(N, edgeList, bestOrder, bestBandwidth)},
+        {"bandwidthOrder", bestOrder},
+        {"bandwidthPositions", positions},
+        {"bandwidthSteps", steps},
+        {"isOptimal", isOptimal},
+        {"method", method}
+    };
 }
 
 json computeGirth(int N, const vector<pair<int,int>>& edgeList) {
@@ -740,7 +833,7 @@ const char* processGraph(const char* inputJson) {
             else if (operation=="check_cycle") { json r=checkCycle(N,edgeList); result=json{{"success",true},{"hasCycle",r["hasCycle"]},{"cyclePath",r["cyclePath"]}}; }
             else if (operation=="diameter") { json r=computeDiameter(N,edgeList); result=json{{"success",true},{"diameter",r["diameter"]},{"path",r["path"]}}; }
             else if (operation=="girth") { json r=computeGirth(N,edgeList); result=json{{"success",true},{"girth",r["girth"]},{"cycle",r["cycle"]}}; }
-            else { json r=computeBandwidth(N,edgeList); result=json{{"success",true},{"bandwidth",r["bandwidth"]},{"bandwidthEdges",r["bandwidthEdges"]}}; }
+            else { json r=computeBandwidth(N,edgeList); result=json{{"success",true},{"bandwidth",r["bandwidth"]},{"initialBandwidth",r["initialBandwidth"]},{"bandwidthEdges",r["bandwidthEdges"]},{"bandwidthOrder",r["bandwidthOrder"]},{"bandwidthPositions",r["bandwidthPositions"]},{"bandwidthSteps",r["bandwidthSteps"]},{"isOptimal",r["isOptimal"]},{"method",r["method"]}}; }
 
         } else if (operation == "shortest_path") {
             int N=input.at("numVertices").get<int>(); if (N<=0||N>1024) { resultBuffer = json{{"success",false},{"error","numVertices harus 1-1024"}}.dump(); return resultBuffer.c_str(); }

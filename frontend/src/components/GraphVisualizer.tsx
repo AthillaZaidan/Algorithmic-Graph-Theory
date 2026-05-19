@@ -18,6 +18,8 @@ interface GraphVisualizerProps {
   diameterPathNodes?: number[];
   girthCycleNodes?: number[];
   mstEdges?: number[][];
+  bandwidthScanEdge?: number[];
+  bandwidthBestEdges?: number[][];
   tspTourNodes?: number[];
   tspTourEdges?: number[][];
   tspStartNode?: number;
@@ -42,6 +44,8 @@ export default function GraphVisualizer({
   diameterPathNodes = [],
   girthCycleNodes = [],
   mstEdges,
+  bandwidthScanEdge,
+  bandwidthBestEdges,
   tspTourNodes = [],
   tspTourEdges,
   tspStartNode,
@@ -111,6 +115,25 @@ export default function GraphVisualizer({
     return s;
   }, [mstEdges]);
 
+  const bandwidthScanEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    if (bandwidthScanEdge && bandwidthScanEdge.length >= 2) {
+      const [u, v] = bandwidthScanEdge;
+      s.add(`${u}-${v}`);
+      s.add(`${v}-${u}`);
+    }
+    return s;
+  }, [bandwidthScanEdge]);
+
+  const bandwidthBestEdgeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of bandwidthBestEdges ?? []) {
+      s.add(`${e[0]}-${e[1]}`);
+      s.add(`${e[1]}-${e[0]}`);
+    }
+    return s;
+  }, [bandwidthBestEdges]);
+
   const tspEdgeSet = useMemo(() => {
     const s = new Set<string>();
     for (const e of tspTourEdges ?? []) {
@@ -121,6 +144,14 @@ export default function GraphVisualizer({
   }, [tspTourEdges]);
 
   const showGrid = showCoordGrid ?? (nodePositions != null && nodePositions.length > 0);
+
+  const fixedPositionMap = useMemo(() => {
+    const map = new Map<number, { x: number; y: number }>();
+    nodePositions?.forEach((pos, index) => {
+      map.set(index, pos);
+    });
+    return map;
+  }, [nodePositions]);
 
   const graphData = useMemo(() => {
     const nodes: AnyNode[] = Array.from({ length: numVertices }, (_, i) => {
@@ -161,8 +192,9 @@ export default function GraphVisualizer({
           nodeCanvasObjectMode={() => "replace"}
           nodeCanvasObject={(node: AnyNode, ctx: CanvasRenderingContext2D) => {
             const id = node.id ?? 0;
-            const x = node.x ?? 0;
-            const y = node.y ?? 0;
+            const fixedPos = fixedPositionMap.get(id);
+            const x = fixedPos?.x ?? node.x ?? 0;
+            const y = fixedPos?.y ?? node.y ?? 0;
             const isHighlighted = highlightNodeSet.has(id);
             const hasCompColor = componentColors?.has(id) ?? false;
             const hasBipartiteColor = bipartiteColors?.has(id) ?? false;
@@ -184,8 +216,8 @@ export default function GraphVisualizer({
               const step = 50;
 
               const firstNode = nodePositions![0];
-              const ox = firstNode != null ? (node.x ?? 0) - firstNode.x : 0;
-              const oy = firstNode != null ? (node.y ?? 0) - firstNode.y : 0;
+              const ox = firstNode != null ? x - firstNode.x : 0;
+              const oy = firstNode != null ? y - firstNode.y : 0;
 
               for (let gx = Math.ceil(minX / step) * step; gx <= maxX; gx += step) {
                 const sx = gx + ox;
@@ -283,28 +315,55 @@ export default function GraphVisualizer({
           linkCanvasObject={(link: AnyLink, ctx: CanvasRenderingContext2D) => {
             const src = typeof link.source === "object" ? link.source : undefined;
             const tgt = typeof link.target === "object" ? link.target : undefined;
-            if (!src || !tgt || src.x == null || src.y == null || tgt.x == null || tgt.y == null) return;
+            if (!src || !tgt) return;
 
             const sourceId = src.id ?? 0;
             const targetId = tgt.id ?? 0;
+            const fixedSrc = fixedPositionMap.get(sourceId);
+            const fixedTgt = fixedPositionMap.get(targetId);
+            const srcX = fixedSrc?.x ?? src.x;
+            const srcY = fixedSrc?.y ?? src.y;
+            const tgtX = fixedTgt?.x ?? tgt.x;
+            const tgtY = fixedTgt?.y ?? tgt.y;
+            if (srcX == null || srcY == null || tgtX == null || tgtY == null) return;
             const key = `${sourceId}-${targetId}`;
             const isDia = diameterEdgeSet.has(key);
             const isGirth = girthEdgeSet.has(key);
             const isHighlighted = highlightEdgeSet.has(key);
             const isMst = mstEdgeSet.has(key);
+            const isBandwidthScan = bandwidthScanEdgeSet.has(key);
+            const isBandwidthBest = bandwidthBestEdgeSet.has(key);
             const isTsp = tspEdgeSet.has(key);
 
             ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
-            ctx.lineTo(tgt.x, tgt.y);
+            ctx.moveTo(srcX, srcY);
+            ctx.lineTo(tgtX, tgtY);
 
-            if (isTsp) {
+            if (isBandwidthScan) {
+              ctx.strokeStyle = "rgba(34,211,238,0.2)";
+              ctx.lineWidth = 7;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
+              ctx.strokeStyle = "#22d3ee";
+              ctx.lineWidth = 3.5;
+            } else if (isBandwidthBest) {
+              ctx.strokeStyle = "rgba(250,204,21,0.18)";
+              ctx.lineWidth = 6;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
+              ctx.strokeStyle = "#facc15";
+              ctx.lineWidth = 3;
+            } else if (isTsp) {
               ctx.strokeStyle = "rgba(251,113,133,0.12)";
               ctx.lineWidth = 4.5;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y);
-              ctx.lineTo(tgt.x, tgt.y);
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
               ctx.strokeStyle = "#fb7185";
               ctx.lineWidth = 2.2;
             } else if (isGirth) {
@@ -312,8 +371,8 @@ export default function GraphVisualizer({
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y);
-              ctx.lineTo(tgt.x, tgt.y);
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
               ctx.strokeStyle = "#ec4899";
               ctx.lineWidth = 3;
             } else if (isDia) {
@@ -321,8 +380,8 @@ export default function GraphVisualizer({
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y);
-              ctx.lineTo(tgt.x, tgt.y);
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
               ctx.strokeStyle = "#4ade80";
               ctx.lineWidth = 3;
             } else if (isMst) {
@@ -330,8 +389,8 @@ export default function GraphVisualizer({
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y);
-              ctx.lineTo(tgt.x, tgt.y);
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
               ctx.strokeStyle = "#f59e0b";
               ctx.lineWidth = 2.5;
             } else if (isHighlighted) {
@@ -339,8 +398,8 @@ export default function GraphVisualizer({
               ctx.lineWidth = 6;
               ctx.stroke();
               ctx.beginPath();
-              ctx.moveTo(src.x, src.y);
-              ctx.lineTo(tgt.x, tgt.y);
+              ctx.moveTo(srcX, srcY);
+              ctx.lineTo(tgtX, tgtY);
               ctx.strokeStyle = "#22d3ee";
               ctx.lineWidth = 3;
             } else {
@@ -352,8 +411,8 @@ export default function GraphVisualizer({
             const edge = edges.find(
               (e) => (e[0] === sourceId && e[1] === targetId) || (e[1] === sourceId && e[0] === targetId)
             );
-            const midX = (src.x + tgt.x) / 2;
-            const midY = (src.y + tgt.y) / 2;
+            const midX = (srcX + tgtX) / 2;
+            const midY = (srcY + tgtY) / 2;
 
             if (edge?.[2] !== undefined) {
               ctx.save();
