@@ -44,7 +44,13 @@ export interface GraphResponse {
   cyclePath?: number[];
   diameter?: number;
   bandwidth?: number;
+  initialBandwidth?: number;
   bandwidthEdges?: number[][];
+  bandwidthOrder?: number[];
+  bandwidthPositions?: number[];
+  bandwidthSteps?: number[][];
+  isOptimal?: boolean;
+  method?: string;
   girth?: number;
   cycle?: number[];
   distance?: number;
