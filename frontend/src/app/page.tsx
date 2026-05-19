@@ -11,6 +11,13 @@ import TimetablingInput, { TimetablingConfig } from "@/components/TimetablingInp
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 import { CITY_PRESETS, ALL_INDONESIA_PRESET } from "@/lib/city-data";
+import {
+  bandwidthForOrder,
+  criticalEdgesForOrder,
+  labelsForOrder,
+  positionsForOrder,
+  solveBandwidth,
+} from "@/lib/bandwidth";
 
 type Operation =
   | "dfs"
@@ -55,7 +62,7 @@ const TABS: TabDef[] = [
   { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
   { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)" },
   { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas" },
-  { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Hitung bandwidth graf dari labeling node saat ini" },
+  { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Optimasi bandwidth graf dengan relabeling node" },
 ];
 
 const COMPONENT_COLORS = [
@@ -379,145 +386,6 @@ export default function Home() {
     clearBandwidthLayout();
   }, [clearAnimations, clearBandwidthLayout]);
 
-  const bandwidthForOrder = useCallback((order: number[], edgeList: number[][]) => {
-    const pos = new Map<number, number>();
-    order.forEach((node, index) => pos.set(node, index));
-    return edgeList.reduce((best, [u, v]) => {
-      const pu = pos.get(u);
-      const pv = pos.get(v);
-      if (pu === undefined || pv === undefined) return best;
-      return Math.max(best, Math.abs(pu - pv));
-    }, 0);
-  }, []);
-
-  const criticalEdgesForOrder = useCallback((order: number[], edgeList: number[][], bandwidth: number) => {
-    const pos = new Map<number, number>();
-    order.forEach((node, index) => pos.set(node, index));
-    return edgeList
-      .map((edge) => [edge[0], edge[1]])
-      .filter(([u, v]) => {
-        const pu = pos.get(u);
-        const pv = pos.get(v);
-        return pu !== undefined && pv !== undefined && Math.abs(pu - pv) === bandwidth;
-      });
-  }, []);
-
-  const cuthillMckeeOrder = useCallback((vertexCount: number, edgeList: number[][]) => {
-    const adj = Array.from({ length: vertexCount }, () => new Set<number>());
-    edgeList.forEach(([u, v]) => {
-      if (u >= 0 && u < vertexCount && v >= 0 && v < vertexCount && u !== v) {
-        adj[u].add(v);
-        adj[v].add(u);
-      }
-    });
-
-    const degree = adj.map((neighbors) => neighbors.size);
-    const visited = Array.from({ length: vertexCount }, () => false);
-    const order: number[] = [];
-
-    while (order.length < vertexCount) {
-      let start = -1;
-      for (let i = 0; i < vertexCount; i++) {
-        if (!visited[i] && (start === -1 || degree[i] < degree[start] || (degree[i] === degree[start] && i < start))) {
-          start = i;
-        }
-      }
-
-      const queue = [start];
-      visited[start] = true;
-
-      for (let head = 0; head < queue.length; head++) {
-        const u = queue[head];
-        order.push(u);
-        const neighbors = Array.from(adj[u]).filter((v) => !visited[v]);
-        neighbors.sort((a, b) => degree[a] - degree[b] || a - b);
-        neighbors.forEach((v) => {
-          visited[v] = true;
-          queue.push(v);
-        });
-      }
-    }
-
-    return order;
-  }, []);
-
-  const solveBandwidthLocally = useCallback((vertexCount: number, edgeList: number[][]): GraphResponse => {
-    const initialOrder = Array.from({ length: vertexCount }, (_, i) => i);
-    const initialBandwidth = bandwidthForOrder(initialOrder, edgeList);
-    let bestOrder = [...initialOrder];
-    let bestBandwidth = initialBandwidth;
-    const steps: number[][] = [initialOrder];
-    const isOptimal = vertexCount <= 9;
-    const method = isOptimal ? "exact_bruteforce" : "reverse_cuthill_mckee";
-
-    if (isOptimal) {
-      const perm = [...initialOrder];
-      const permute = (start: number) => {
-        if (start === perm.length) {
-          const bw = bandwidthForOrder(perm, edgeList);
-          if (bw < bestBandwidth) {
-            bestBandwidth = bw;
-            bestOrder = [...perm];
-            if (steps.length < 24) steps.push([...perm]);
-          }
-          return;
-        }
-        for (let i = start; i < perm.length; i++) {
-          [perm[start], perm[i]] = [perm[i], perm[start]];
-          permute(start + 1);
-          [perm[start], perm[i]] = [perm[i], perm[start]];
-        }
-      };
-      permute(0);
-    } else {
-      const cm = cuthillMckeeOrder(vertexCount, edgeList);
-      const rcm = [...cm].reverse();
-      const candidates = [cm, rcm];
-      candidates.forEach((order) => {
-        steps.push(order);
-        const bw = bandwidthForOrder(order, edgeList);
-        if (bw < bestBandwidth) {
-          bestBandwidth = bw;
-          bestOrder = [...order];
-        }
-      });
-    }
-
-    const positions = Array.from({ length: vertexCount }, () => 0);
-    bestOrder.forEach((node, index) => {
-      positions[node] = index;
-    });
-
-    if (steps.length === 0 || steps[steps.length - 1].join(",") !== bestOrder.join(",")) {
-      steps.push(bestOrder);
-    }
-
-    return {
-      success: true,
-      bandwidth: bestBandwidth,
-      initialBandwidth,
-      bandwidthEdges: criticalEdgesForOrder(bestOrder, edgeList, bestBandwidth),
-      bandwidthOrder: bestOrder,
-      bandwidthPositions: positions,
-      bandwidthSteps: steps,
-      isOptimal,
-      method,
-    };
-  }, [bandwidthForOrder, criticalEdgesForOrder, cuthillMckeeOrder]);
-
-  const positionsForOrder = useCallback((order: number[]) => {
-    const radius = Math.max(75, Math.min(155, order.length * 18));
-    const positions = Array.from({ length: order.length }, () => ({ x: 0, y: 0 }));
-    order.forEach((node, index) => {
-      const angle = -Math.PI / 2 + (2 * Math.PI * index) / Math.max(order.length, 1);
-      positions[node] = {
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
-      };
-    });
-    return positions;
-  }, []);
-
   const runOperation = async () => {
     setLoading(true);
     setError("");
@@ -591,18 +459,7 @@ export default function Home() {
 
       try {
         if (activeTab === "bandwidth") {
-          data = await callApiRoute();
-          if (
-            !data.success ||
-            data.initialBandwidth === undefined ||
-            !data.bandwidthOrder ||
-            !data.bandwidthSteps
-          ) {
-            data = solveBandwidthLocally(
-              numVertices,
-              (body.edges ?? []).map((edge) => [edge[0], edge[1]])
-            );
-          }
+          data = solveBandwidth(numVertices, edges);
         } else {
           data = await callWasmEngine(body);
           if (
@@ -615,10 +472,7 @@ export default function Home() {
         }
       } catch {
         if (activeTab === "bandwidth") {
-          data = solveBandwidthLocally(
-            numVertices,
-            (body.edges ?? []).map((edge) => [edge[0], edge[1]])
-          );
+          data = solveBandwidth(numVertices, edges);
         } else {
           data = await callApiRoute();
         }
@@ -759,7 +613,8 @@ export default function Home() {
           setBandwidthBestValue(data.bandwidth as number);
           setBandwidthBestEdges(bwEdges);
           setBandwidthAnimatedOrder(finalOrder);
-          setBandwidthNodePositions(positionsForOrder(finalOrder));
+          setBandwidthNodePositions(undefined);
+          setGraphLayoutVersion((v) => v + 1);
           setHighlightEdges(bwEdges);
           setHighlightNodes(Array.from(new Set(bwEdges.flatMap(([u, v]) => [u, v]))));
         }, animationSteps.length * 700 + 250);
@@ -822,6 +677,14 @@ export default function Home() {
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
   const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || (activeTab === "tsp_grasp_swap" && tspMode === "edge");
   const isWeightedGraph = isWeightedMode || edges.some((edge) => edge[2] !== undefined);
+  const bandwidthDisplayOrder =
+    activeTab === "bandwidth" && bandwidthAnimatedOrder.length === numVertices
+      ? bandwidthAnimatedOrder
+      : ((result?.bandwidthOrder as number[]) || []);
+  const bandwidthDisplayLabels =
+    activeTab === "bandwidth" && bandwidthDisplayOrder.length === numVertices
+      ? labelsForOrder(bandwidthDisplayOrder)
+      : undefined;
 
   const renderResult = () => {
     if (error) {
@@ -1274,6 +1137,13 @@ export default function Home() {
         const beforeOrder = Array.from({ length: numVertices }, (_, i) => i);
         const afterOrder = (result.bandwidthOrder as number[]) || beforeOrder;
         const finalPositions = (result.bandwidthPositions as number[]) || beforeOrder;
+        const relabelMap = afterOrder.map((node, index) => `${node}->${index}`);
+        const methodLabel =
+          result.method === "hales_hypercube"
+            ? "Hales/Harper ordering untuk hypercube (optimal)"
+            : result.isOptimal
+            ? "Exact brute force (optimal)"
+            : "Reverse Cuthill-McKee heuristic";
         return (
           <div className="space-y-3">
             <p className="text-white/60 text-xs uppercase tracking-wide">
@@ -1282,7 +1152,7 @@ export default function Home() {
               Bandwidth terbaik: <span className="text-cyan-300 font-bold text-lg">{result.bandwidth ?? 0}</span>
             </p>
             <p className="text-white/40 text-xs">
-              Metode: {result.isOptimal ? "Exact brute force (optimal)" : "Reverse Cuthill-McKee heuristic"}
+              Metode: {methodLabel}
             </p>
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="glass p-3 border-white/10">
@@ -1292,6 +1162,9 @@ export default function Home() {
               <div className="glass p-3 border-cyan-400/25">
                 <p className="text-cyan-300 text-xs uppercase tracking-wide mb-2">After</p>
                 <p className="font-mono text-sm text-cyan-100 break-words">{afterOrder.join(" - ")}</p>
+                <p className="mt-2 text-xs text-white/45 break-words">
+                  Relabel: {relabelMap.join(", ")}
+                </p>
               </div>
             </div>
             {(bandwidthAnimatedOrder.length > 0 || bandwidthBestValue !== undefined) && (
@@ -1313,9 +1186,9 @@ export default function Home() {
                 <div className="flex flex-wrap gap-2">
                   {bwEdges.map(([u, v], i) => (
                     <span key={`${u}-${v}-${i}`} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400/15 border border-cyan-400/30 px-3 py-2 text-cyan-100 text-sm font-mono">
-                      {u}
+                      {finalPositions[u] ?? u}
                       <span className="text-cyan-400/60">-</span>
-                      {v}
+                      {finalPositions[v] ?? v}
                       <span className="text-white/40 text-xs">|{Math.abs((finalPositions[u] ?? u) - (finalPositions[v] ?? v))}|</span>
                     </span>
                   ))}
@@ -2285,8 +2158,15 @@ export default function Home() {
                   ? coordinates
                   : undefined
               }
-              nodeLabels={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0 ? cityNames : undefined}
+              nodeLabels={
+                activeTab === "bandwidth"
+                  ? bandwidthDisplayLabels
+                  : activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0
+                  ? cityNames
+                  : undefined
+              }
               showCoordGrid={activeTab === "bandwidth" ? false : undefined}
+              lockNodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate"}
             />
           )}
 
