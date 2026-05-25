@@ -27,6 +27,8 @@ interface GraphVisualizerProps {
   nodeLabels?: string[];
   showCoordGrid?: boolean;
   lockNodePositions?: boolean;
+  height?: number;
+  framed?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +56,8 @@ export default function GraphVisualizer({
   nodeLabels,
   showCoordGrid,
   lockNodePositions = nodePositions != null && nodePositions.length > 0,
+  height = 350,
+  framed = true,
 }: GraphVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 400 });
@@ -66,14 +70,14 @@ export default function GraphVisualizer({
       for (const entry of entries) {
         setDimensions({
           width: entry.contentRect.width,
-          height: Math.max(entry.contentRect.height, 350),
+          height: Math.max(entry.contentRect.height, height),
         });
       }
     });
 
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
+  }, [height]);
 
   const highlightNodeSet = useMemo(() => new Set(highlightNodes), [highlightNodes]);
 
@@ -186,7 +190,11 @@ export default function GraphVisualizer({
   }, [showGrid, dimensions, numVertices, edges]);
 
   return (
-    <div ref={containerRef} className="glass overflow-hidden relative" style={{ minHeight: 350 }}>
+    <div
+      ref={containerRef}
+      className={`${framed ? "glass" : ""} overflow-hidden relative`}
+      style={{ height, minHeight: height }}
+    >
       {typeof window !== "undefined" && (
         <ForceGraph2D
           width={dimensions.width}
