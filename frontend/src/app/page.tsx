@@ -476,12 +476,14 @@ export default function Home() {
       try {
         if (activeTab === "bandwidth") {
           data = solveBandwidth(numVertices, edges);
-        } else if (activeTab === "tsp_grasp_swap") {
-          data = await callApiRoute();
         } else {
           data = await callWasmEngine(body);
           if (
-            (activeTab === "maximum_bipartite_matching" || activeTab === "timetabling_edge_coloring") &&
+            (
+              activeTab === "maximum_bipartite_matching" ||
+              activeTab === "timetabling_edge_coloring" ||
+              activeTab === "tsp_grasp_swap"
+            ) &&
             !data.success &&
             (data.error || "").toLowerCase().includes("operasi tidak dikenal")
           ) {
