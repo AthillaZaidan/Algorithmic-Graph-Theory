@@ -13,6 +13,16 @@ function hypercubeEdges(dim: number) {
   return edges;
 }
 
+function generalizedPetersenEdges(n: number, k: number) {
+  const edges: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    edges.push([i, (i + 1) % n]);
+    edges.push([i, i + n]);
+    edges.push([i + n, ((i + k) % n) + n]);
+  }
+  return edges;
+}
+
 describe("solveBandwidth", () => {
   test("uses Cuthill-McKee bandwidth for C5", () => {
     const edges = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]];
@@ -57,6 +67,15 @@ describe("solveBandwidth", () => {
     expect(result.bandwidthOrder).toEqual(expectedOrder);
     expect(result.bandwidth).toBe(bandwidthForOrder(expectedOrder, edges));
     expect(result.isOptimal).toBe(false);
+    expect(result.method).toBe("cuthill_mckee");
+  });
+
+  test("does not return a worse bandwidth when Cuthill-McKee degrades Petersen ordering", () => {
+    const edges = generalizedPetersenEdges(5, 2);
+    const result = solveBandwidth(10, edges);
+
+    expect(result.initialBandwidth).toBe(5);
+    expect(result.bandwidth).toBeLessThanOrEqual(result.initialBandwidth);
     expect(result.method).toBe("cuthill_mckee");
   });
 });

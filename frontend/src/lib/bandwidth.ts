@@ -105,9 +105,11 @@ export function solveBandwidth(vertexCount: number, edges: number[][]): Bandwidt
   const edgeList = normalizeEdges(vertexCount, edges);
   const initialOrder = Array.from({ length: vertexCount }, (_, i) => i);
   const initialBandwidth = bandwidthForOrder(initialOrder, edgeList);
-  const bestOrder = cuthillMckeeOrder(vertexCount, edgeList);
-  const bestBandwidth = bandwidthForOrder(bestOrder, edgeList);
-  const bandwidthSteps = initialOrder.join(",") === bestOrder.join(",") ? [initialOrder] : [initialOrder, bestOrder];
+  const cmOrder = cuthillMckeeOrder(vertexCount, edgeList);
+  const cmBandwidth = bandwidthForOrder(cmOrder, edgeList);
+  const bestOrder = cmBandwidth <= initialBandwidth ? cmOrder : initialOrder;
+  const bestBandwidth = Math.min(initialBandwidth, cmBandwidth);
+  const bandwidthSteps = initialOrder.join(",") === cmOrder.join(",") ? [initialOrder] : [initialOrder, cmOrder, bestOrder];
 
   const bandwidthPositions = Array.from({ length: vertexCount }, () => 0);
   bestOrder.forEach((node, index) => {
