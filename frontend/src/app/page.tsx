@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, type ChangeEvent } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import BandwidthD3Visualizer from "@/components/BandwidthD3Visualizer";
@@ -16,6 +16,7 @@ import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 import { CITY_PRESETS, ALL_INDONESIA_PRESET } from "@/lib/city-data";
 import { getTspCoordinateDisplayEdges } from "@/lib/tsp-coordinate-display";
 import { getTspTourFrame } from "@/lib/tsp-search-animation";
+import { parseTspFile } from "@/lib/tsp-parser";
 import {
   bandwidthForOrder,
   criticalEdgesForOrder,
@@ -149,6 +150,7 @@ export default function Home() {
   const [coordA1, setCoordA1] = useState(1);
   const [coordA2, setCoordA2] = useState(2);
   const [isWeightedMode, setIsWeightedMode] = useState(false);
+  const [tspFileStatus, setTspFileStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const [coordStructEdges, setCoordStructEdges] = useState<number[][]>([]);
 
@@ -224,6 +226,7 @@ export default function Home() {
 
   const generateCoordPreset = () => {
     clearResultState();
+    setTspFileStatus(null);
 
     const preset = allCityPresets.find(p => p.id === coordPreset);
     if (preset) {
@@ -409,6 +412,45 @@ export default function Home() {
     setStartNode(0);
     setTspCoordinateView("graph");
   };
+
+  const handleTspFileUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith(".tsp") && !lowerName.endsWith(".txt")) {
+      setTspFileStatus({ type: "error", message: "Hanya file .tsp atau .txt TSPLIB yang didukung" });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseTspFile(String(reader.result ?? ""));
+      if (parsed.error) {
+        setTspFileStatus({ type: "error", message: parsed.error });
+        return;
+      }
+
+      clearResultState();
+      setCoordinates(parsed.coordinates);
+      setCityNames(parsed.labels);
+      setCityMapPoints(parsed.mapPoints ?? []);
+      setCoordStructEdges([]);
+      setCoordPreset("");
+      setGraphPreset("");
+      setStartNode(0);
+      setTspCoordinateView(parsed.mapPoints ? "map" : "graph");
+      setTspFileStatus({
+        type: "success",
+        message: `Loaded ${parsed.name}: ${parsed.dimension} node (${parsed.edgeWeightType})${parsed.mapPoints ? " + peta" : ""}`,
+      });
+    };
+    reader.onerror = () => {
+      setTspFileStatus({ type: "error", message: "Gagal membaca file TSP" });
+    };
+    reader.readAsText(file);
+  }, [clearResultState]);
 
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
     clearResultState();
@@ -1937,6 +1979,41 @@ export default function Home() {
                       <p className="text-[11px] text-white/30">
                         {allCityPresets.find(p => p.id === coordPreset)?.cities.length} lokasi
                       </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label htmlFor="tsp-file-upload" className="block text-xs uppercase tracking-wider text-white/50">
+                          Upload File TSP
+                        </label>
+                        <p className="mt-1 text-[11px] text-white/32">
+                          Format TSPLIB NODE_COORD_SECTION, EDGE_WEIGHT_TYPE EUC_2D
+                        </p>
+                      </div>
+                      <label
+                        htmlFor="tsp-file-upload"
+                        className="glass-btn cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/15"
+                      >
+                        Pilih .tsp
+                      </label>
+                      <input
+                        id="tsp-file-upload"
+                        type="file"
+                        accept=".tsp,.txt"
+                        className="hidden"
+                        onChange={handleTspFileUpload}
+                      />
+                    </div>
+                    {tspFileStatus && (
+                      <div className={`rounded-lg border px-3 py-2 text-xs ${
+                        tspFileStatus.type === "success"
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                          : "border-red-400/20 bg-red-400/10 text-red-300"
+                      }`}>
+                        {tspFileStatus.message}
+                      </div>
                     )}
                   </div>
 

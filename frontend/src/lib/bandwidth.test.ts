@@ -30,4 +30,20 @@ describe("solveBandwidth", () => {
     expect(result.isOptimal).toBe(true);
     expect(result.method).toBe("hales_hypercube");
   });
+
+  test("uses optimal Hales ordering for Q5 hypercube", () => {
+    const result = solveBandwidth(32, hypercubeEdges(5));
+
+    expect(result.bandwidth).toBe(13);
+    expect(result.isOptimal).toBe(true);
+    expect(result.method).toBe("hales_hypercube");
+  });
+
+  test("uses optimal Hales ordering for Q6 hypercube", () => {
+    const result = solveBandwidth(64, hypercubeEdges(6));
+
+    expect(result.bandwidth).toBe(23);
+    expect(result.isOptimal).toBe(true);
+    expect(result.method).toBe("hales_hypercube");
+  });
 });
