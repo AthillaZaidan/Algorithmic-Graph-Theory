@@ -2197,6 +2197,7 @@ export default function Home() {
                 <GraphInput
                   onGraphChange={handleGraphChange}
                   onFileLoaded={handleFileLoaded}
+                  activeOperation={activeTab}
                 />
               )}
 
