@@ -78,6 +78,12 @@ function interpolatePoint(path: RoutePath[], progress: number): [number, number]
   ];
 }
 
+function markerRadiusMeters(count: number, kind: "default" | "tour" | "start") {
+  const scale = count > 700 ? 0.32 : count > 300 ? 0.45 : count > 120 ? 0.62 : 1;
+  const base = kind === "start" ? 9500 : kind === "tour" ? 7000 : 4300;
+  return Math.max(900, Math.round(base * scale));
+}
+
 export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNode, isSearching = false }: TspIndonesiaMapProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tick, setTick] = useState(0);
@@ -170,7 +176,8 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
         const isStart = tspStartNode === index;
         const isTourNode = tourNodeSet.has(index);
         const pulse = isSearching && isTourNode ? 1.8 * Math.sin(tick * 8 + index * 0.2) : 0;
-        return isStart ? 9500 + pulse * 900 : isTourNode ? 7000 + pulse * 700 : 4300;
+        const kind = isStart ? "start" : isTourNode ? "tour" : "default";
+        return markerRadiusMeters(cities.length, kind) + pulse * markerRadiusMeters(cities.length, kind) * 0.1;
       },
       radiusUnits: "meters",
       getFillColor: (_city, { index }) => {
@@ -179,7 +186,7 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
         return [14, 116, 144, 170];
       },
       getLineColor: [255, 255, 255, 210],
-      lineWidthMinPixels: 1,
+      lineWidthMinPixels: cities.length > 300 ? 0.35 : 1,
       stroked: true,
       pickable: true,
     });
