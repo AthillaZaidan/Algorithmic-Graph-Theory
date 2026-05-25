@@ -1004,6 +1004,55 @@ vector<int> cuthillMckeeOrder(int N, const vector<pair<int,int>>& edgeList) {
     return order;
 }
 
+int popcountInt(int value) {
+    int count = 0;
+    while (value > 0) {
+        count += value & 1;
+        value >>= 1;
+    }
+    return count;
+}
+
+bool isPowerOfTwoInt(int value) {
+    return value > 0 && (value & (value - 1)) == 0;
+}
+
+bool isHypercubeGraph(int N, const vector<pair<int,int>>& edgeList) {
+    if (!isPowerOfTwoInt(N)) return false;
+
+    int dim = 0;
+    while ((1 << dim) < N) dim++;
+    if ((1 << dim) != N) return false;
+    if ((int)edgeList.size() != (N * dim) / 2) return false;
+
+    set<pair<int,int>> edgeSet;
+    for (auto& e : edgeList) {
+        int u = min(e.first, e.second);
+        int v = max(e.first, e.second);
+        if (u < 0 || u >= N || v < 0 || v >= N || u == v) return false;
+        edgeSet.insert({u, v});
+    }
+
+    for (int u = 0; u < N; u++) {
+        for (int bit = 0; bit < dim; bit++) {
+            int v = u ^ (1 << bit);
+            if (edgeSet.find({min(u, v), max(u, v)}) == edgeSet.end()) return false;
+        }
+    }
+    return true;
+}
+
+vector<int> halesHypercubeOrder(int N) {
+    vector<int> order(N);
+    iota(order.begin(), order.end(), 0);
+    sort(order.begin(), order.end(), [](int a, int b) {
+        int byWeight = popcountInt(a) - popcountInt(b);
+        if (byWeight != 0) return byWeight < 0;
+        return a > b;
+    });
+    return order;
+}
+
 // Minimize graph bandwidth: exact for small graphs, RCM heuristic for larger graphs.
 json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
     vector<int> initialOrder(N);
@@ -1028,6 +1077,12 @@ json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
                 if (bestBandwidth == 0) break;
             }
         } while (next_permutation(perm.begin(), perm.end()));
+    } else if (isHypercubeGraph(N, edgeList)) {
+        bestOrder = halesHypercubeOrder(N);
+        bestBandwidth = bandwidthForOrder(N, edgeList, bestOrder);
+        steps.push_back(bestOrder);
+        isOptimal = true;
+        method = "hales_hypercube";
     } else {
         vector<int> cm = cuthillMckeeOrder(N, edgeList);
         vector<int> rcm = cm;
