@@ -53,26 +53,27 @@ interface TabDef {
   label: string;
   group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7";
   description: string;
+  algorithm: string;
 }
 
 const TABS: TabDef[] = [
-  { id: "dfs", label: "DFS", group: "tugas1", description: "Depth-First Search traversal dari start node" },
-  { id: "bfs", label: "BFS", group: "tugas1", description: "Breadth-First Search traversal dari start node" },
-  { id: "check_path", label: "Path Check", group: "tugas1", description: "Cek apakah ada lintasan dari node A ke node B" },
-  { id: "check_connectivity", label: "Connectivity", group: "tugas1", description: "Cek apakah graf terhubung (connected)" },
-  { id: "count_components", label: "Components", group: "tugas2", description: "Hitung jumlah komponen terhubung dalam graf" },
-  { id: "largest_component", label: "Largest", group: "tugas2", description: "Cari komponen terhubung terbesar" },
-  { id: "count_islands", label: "Islands", group: "tugas2", description: "Hitung jumlah pulau pada grid" },
-  { id: "check_bipartite", label: "Bipartite", group: "tugas3", description: "Cek apakah graf adalah bipartite dengan 2 partisi" },
-  { id: "check_cycle", label: "Cycle", group: "tugas3", description: "Cek apakah graf memiliki cycle/siklus" },
-  { id: "diameter", label: "Diameter", group: "tugas3", description: "Hitung diameter graf dan jalur terpanjang" },
-  { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf" },
-  { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)" },
-  { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)" },
-  { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap" },
-  { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)" },
-  { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas" },
-  { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Optimasi bandwidth graf dengan relabeling node" },
+  { id: "dfs", label: "DFS", group: "tugas1", description: "Depth-First Search traversal dari start node", algorithm: "Pakai stack/rekursi: telusuri sedalam mungkin lewat tetangga belum visited, lalu backtrack saat mentok." },
+  { id: "bfs", label: "BFS", group: "tugas1", description: "Breadth-First Search traversal dari start node", algorithm: "Pakai queue: kunjungi node per level jarak dari start, semua tetangga dekat diproses dulu." },
+  { id: "check_path", label: "Path Check", group: "tugas1", description: "Cek apakah ada lintasan dari node A ke node B", algorithm: "Jalankan BFS/DFS dari node A dan simpan parent; path ada kalau node B berhasil dikunjungi." },
+  { id: "check_connectivity", label: "Connectivity", group: "tugas1", description: "Cek apakah graf terhubung (connected)", algorithm: "DFS/BFS dari satu node, hitung node reachable; connected kalau semua node terjangkau." },
+  { id: "count_components", label: "Components", group: "tugas2", description: "Hitung jumlah komponen terhubung dalam graf", algorithm: "Scan semua node; tiap node belum visited memulai DFS/BFS baru dan menambah jumlah komponen." },
+  { id: "largest_component", label: "Largest", group: "tugas2", description: "Cari komponen terhubung terbesar", algorithm: "Enumerasi semua komponen dengan DFS/BFS, bandingkan ukuran, ambil komponen dengan node terbanyak." },
+  { id: "count_islands", label: "Islands", group: "tugas2", description: "Hitung jumlah pulau pada grid", algorithm: "Grid jadi graf 4-arah; setiap sel daratan belum visited memicu flood fill untuk satu island." },
+  { id: "check_bipartite", label: "Bipartite", group: "tugas3", description: "Cek apakah graf adalah bipartite dengan 2 partisi", algorithm: "BFS coloring dua warna; kalau ada edge yang menghubungkan warna sama, graf bukan bipartite." },
+  { id: "check_cycle", label: "Cycle", group: "tugas3", description: "Cek apakah graf memiliki cycle/siklus", algorithm: "DFS dengan parent tracking; cycle ditemukan saat ada tetangga visited yang bukan parent." },
+  { id: "diameter", label: "Diameter", group: "tugas3", description: "Hitung diameter graf dan jalur terpanjang", algorithm: "BFS dari tiap node untuk shortest path terjauh; diameter adalah jarak maksimum dari semua BFS." },
+  { id: "girth", label: "Girth", group: "tugas3", description: "Cari girth (cycle terpendek) dalam graf", algorithm: "BFS dari tiap node sambil simpan parent; saat edge menutup cycle, ambil panjang cycle minimum." },
+  { id: "shortest_path", label: "Shortest Path", group: "tugas4", description: "Lintasan terpendek dari node A ke B (Dijkstra, berbobot)", algorithm: "Dijkstra: priority queue pilih jarak terkecil, relax edge, lalu parent dipakai untuk rekonstruksi path." },
+  { id: "min_spanning_tree", label: "MST", group: "tugas4", description: "Pohon pembangun minimal (Kruskal)", algorithm: "Kruskal: sort edge dari bobot kecil, ambil edge kalau tidak membentuk cycle memakai DSU." },
+  { id: "tsp_grasp_swap", label: "TSP GRASP", group: "tugas5", description: "Travelling Salesman Problem dengan GRASP + 2-Opt Swap", algorithm: "GRASP buat banyak tour semi-random, lalu 2-Opt Swap menukar sisi kalau total cost turun." },
+  { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)", algorithm: "Hopcroft-Karp: BFS bikin layer augmenting path, DFS augment banyak path sekaligus sampai mentok." },
+  { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas", algorithm: "Model guru-kelas sebagai graf bipartit; warna edge = periode, edge incident tidak boleh satu periode." },
+  { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Optimasi bandwidth graf dengan relabeling node", algorithm: "Cuthill-McKee: mulai dari degree kecil, BFS tetangga urut degree naik, lalu order itu dipakai relabel node." },
 ];
 
 const COMPONENT_COLORS = [
@@ -758,6 +759,7 @@ export default function Home() {
 
   const isTimetabling = activeTab === "timetabling_edge_coloring";
   const isGraphOp = activeTab !== "count_islands" && !isTimetabling;
+  const activeTabDef = TABS.find((t) => t.id === activeTab);
   const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_grasp_swap";
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
   const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || (activeTab === "tsp_grasp_swap" && tspMode === "edge");
@@ -1853,9 +1855,15 @@ export default function Home() {
         </div>
 
         {/* Description */}
-        <p className="text-white/40 text-xs mt-3 px-1">
-          {TABS.find((t) => t.id === activeTab)?.description}
-        </p>
+        <div className="mt-3 px-1 space-y-2">
+          <p className="text-white/40 text-xs">
+            {activeTabDef?.description}
+          </p>
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wider text-cyan-300/70 mb-1">Cara algoritma</p>
+            <p className="text-xs leading-relaxed text-white/70">{activeTabDef?.algorithm}</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}
