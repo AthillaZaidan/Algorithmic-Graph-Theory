@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { solveBandwidth } from "./bandwidth";
+import { bandwidthForOrder, cuthillMckeeOrder, solveBandwidth } from "./bandwidth";
 
 function hypercubeEdges(dim: number) {
   const n = 1 << dim;
@@ -14,36 +14,49 @@ function hypercubeEdges(dim: number) {
 }
 
 describe("solveBandwidth", () => {
-  test("uses exact bandwidth for C5", () => {
-    const result = solveBandwidth(5, [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]]);
+  test("uses Cuthill-McKee bandwidth for C5", () => {
+    const edges = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]];
+    const expectedOrder = cuthillMckeeOrder(5, edges);
+    const result = solveBandwidth(5, edges);
 
     expect(result.initialBandwidth).toBe(4);
-    expect(result.bandwidth).toBe(2);
-    expect(result.isOptimal).toBe(true);
+    expect(result.bandwidthOrder).toEqual(expectedOrder);
+    expect(result.bandwidth).toBe(bandwidthForOrder(expectedOrder, edges));
+    expect(result.isOptimal).toBe(false);
+    expect(result.method).toBe("cuthill_mckee");
   });
 
-  test("uses Hales ordering for Q4 hypercube", () => {
-    const result = solveBandwidth(16, hypercubeEdges(4));
+  test("uses Cuthill-McKee for Q4 hypercube instead of Hales ordering", () => {
+    const edges = hypercubeEdges(4);
+    const expectedOrder = cuthillMckeeOrder(16, edges);
+    const result = solveBandwidth(16, edges);
 
     expect(result.initialBandwidth).toBe(8);
-    expect(result.bandwidth).toBe(7);
-    expect(result.isOptimal).toBe(true);
-    expect(result.method).toBe("hales_hypercube");
+    expect(result.bandwidthOrder).toEqual(expectedOrder);
+    expect(result.bandwidth).toBe(bandwidthForOrder(expectedOrder, edges));
+    expect(result.isOptimal).toBe(false);
+    expect(result.method).toBe("cuthill_mckee");
   });
 
-  test("uses optimal Hales ordering for Q5 hypercube", () => {
-    const result = solveBandwidth(32, hypercubeEdges(5));
+  test("uses Cuthill-McKee for Q5 hypercube", () => {
+    const edges = hypercubeEdges(5);
+    const expectedOrder = cuthillMckeeOrder(32, edges);
+    const result = solveBandwidth(32, edges);
 
-    expect(result.bandwidth).toBe(13);
-    expect(result.isOptimal).toBe(true);
-    expect(result.method).toBe("hales_hypercube");
+    expect(result.bandwidthOrder).toEqual(expectedOrder);
+    expect(result.bandwidth).toBe(bandwidthForOrder(expectedOrder, edges));
+    expect(result.isOptimal).toBe(false);
+    expect(result.method).toBe("cuthill_mckee");
   });
 
-  test("uses optimal Hales ordering for Q6 hypercube", () => {
-    const result = solveBandwidth(64, hypercubeEdges(6));
+  test("uses Cuthill-McKee for Q6 hypercube", () => {
+    const edges = hypercubeEdges(6);
+    const expectedOrder = cuthillMckeeOrder(64, edges);
+    const result = solveBandwidth(64, edges);
 
-    expect(result.bandwidth).toBe(23);
-    expect(result.isOptimal).toBe(true);
-    expect(result.method).toBe("hales_hypercube");
+    expect(result.bandwidthOrder).toEqual(expectedOrder);
+    expect(result.bandwidth).toBe(bandwidthForOrder(expectedOrder, edges));
+    expect(result.isOptimal).toBe(false);
+    expect(result.method).toBe("cuthill_mckee");
   });
 });

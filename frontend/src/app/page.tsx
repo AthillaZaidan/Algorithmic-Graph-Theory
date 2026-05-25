@@ -1221,12 +1221,7 @@ export default function Home() {
         const afterOrder = (result.bandwidthOrder as number[]) || beforeOrder;
         const finalPositions = (result.bandwidthPositions as number[]) || beforeOrder;
         const relabelMap = afterOrder.map((node, index) => `${node}->${index}`);
-        const methodLabel =
-          result.method === "hales_hypercube"
-            ? "Hales/Harper ordering untuk hypercube (optimal)"
-            : result.isOptimal
-            ? "Exact brute force (optimal)"
-            : "Reverse Cuthill-McKee heuristic";
+        const methodLabel = "Cuthill-McKee heuristic";
         return (
           <div className="space-y-3">
             <p className="text-white/60 text-xs uppercase tracking-wide">
