@@ -518,6 +518,8 @@ export default function Home() {
       try {
         if (activeTab === "bandwidth") {
           data = solveBandwidth(numVertices, edges);
+        } else if (activeTab === "count_islands") {
+          data = await callApiRoute();
         } else {
           data = await callWasmEngine(body);
           if (

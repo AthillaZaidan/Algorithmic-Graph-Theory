@@ -632,10 +632,13 @@ json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
     vector<int> initialOrder(N);
     iota(initialOrder.begin(), initialOrder.end(), 0);
     int initialBandwidth = bandwidthForOrder(N, edgeList, initialOrder);
-    vector<int> bestOrder = cuthillMckeeOrder(N, edgeList);
-    int bestBandwidth = bandwidthForOrder(N, edgeList, bestOrder);
+    vector<int> cmOrder = cuthillMckeeOrder(N, edgeList);
+    int cmBandwidth = bandwidthForOrder(N, edgeList, cmOrder);
+    vector<int> bestOrder = cmBandwidth <= initialBandwidth ? cmOrder : initialOrder;
+    int bestBandwidth = min(initialBandwidth, cmBandwidth);
     vector<vector<int>> steps;
     steps.push_back(initialOrder);
+    if (steps.back() != cmOrder) steps.push_back(cmOrder);
     if (steps.back() != bestOrder) steps.push_back(bestOrder);
 
     vector<int> positions(N, 0);
