@@ -7,9 +7,33 @@ interface GraphInputProps {
   onGraphChange: (numVertices: number, edges: number[][]) => void;
   onFileLoaded?: (numVertices: number, edges: number[][], isWeighted: boolean) => void;
   maxNodes?: number;
+  activeOperation?: string;
 }
 
-export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 1024 }: GraphInputProps) {
+interface GraphTemplate {
+  id: string;
+  label: string;
+  hint: string;
+  operations: string[];
+  numVertices: number;
+  edges: number[][];
+  weighted?: boolean;
+  startNode?: number;
+}
+
+const GRAPH_TEMPLATES: GraphTemplate[] = [
+  { id: "traversal-branch", label: "DFS/BFS Branching Tree", hint: "Tree bercabang buat lihat beda urutan DFS dan BFS.", operations: ["dfs", "bfs", "check_connectivity", "count_components", "largest_component"], numVertices: 9, edges: [[0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 6], [5, 7], [5, 8]] },
+  { id: "path-clear", label: "Clear Path A-B", hint: "Path utama dengan cabang kecil, cocok buat path check.", operations: ["check_path", "shortest_path"], numVertices: 7, edges: [[0, 1, 2], [1, 2, 2], [2, 6, 3], [0, 3, 7], [3, 4, 2], [4, 6, 1], [1, 5, 6]], weighted: true },
+  { id: "disconnected", label: "Disconnected Components", hint: "Tiga komponen, bagus buat components/connectivity.", operations: ["check_connectivity", "count_components", "largest_component"], numVertices: 10, edges: [[0, 1], [1, 2], [2, 3], [4, 5], [5, 6], [7, 8]] },
+  { id: "bipartite-matching", label: "Bipartite Matching", hint: "Partisi kiri-kanan untuk bipartite dan matching.", operations: ["check_bipartite", "maximum_bipartite_matching", "timetabling_edge_coloring"], numVertices: 8, edges: [[0, 4], [0, 5], [1, 5], [1, 6], [2, 4], [2, 7], [3, 6], [3, 7]] },
+  { id: "cycle-girth", label: "Triangle + Square Cycles", hint: "Ada cycle pendek, cocok buat cycle dan girth.", operations: ["check_cycle", "girth"], numVertices: 7, edges: [[0, 1], [1, 2], [2, 0], [2, 3], [3, 4], [4, 5], [5, 2], [5, 6]] },
+  { id: "diameter-long", label: "Long Diameter Graph", hint: "Path panjang dengan cabang, diameter gampang kelihatan.", operations: ["diameter", "bfs", "dfs"], numVertices: 10, edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [2, 7], [7, 8], [8, 9]] },
+  { id: "weighted-routes", label: "Weighted Route Network", hint: "Edge berbobot untuk Dijkstra dan MST.", operations: ["shortest_path", "min_spanning_tree", "tsp_grasp_swap"], numVertices: 7, edges: [[0, 1, 4], [0, 2, 2], [1, 2, 1], [1, 3, 5], [2, 3, 8], [2, 4, 10], [3, 4, 2], [3, 5, 6], [4, 5, 3], [4, 6, 5], [5, 6, 1]], weighted: true },
+  { id: "tsp-small", label: "Small TSP Tour", hint: "Graf lengkap kecil berbobot buat TSP edge mode.", operations: ["tsp_grasp_swap"], numVertices: 6, edges: [[0, 1, 3], [0, 2, 4], [0, 3, 2], [0, 4, 7], [0, 5, 3], [1, 2, 4], [1, 3, 6], [1, 4, 3], [1, 5, 5], [2, 3, 5], [2, 4, 8], [2, 5, 6], [3, 4, 6], [3, 5, 4], [4, 5, 2]], weighted: true },
+  { id: "bandwidth-petersen", label: "Petersen Bandwidth Case", hint: "Kasus bandwidth stabil untuk relabel Cuthill-McKee.", operations: ["bandwidth", "check_cycle", "girth"], numVertices: 10, edges: [[0, 1], [0, 5], [5, 7], [1, 2], [1, 6], [6, 8], [2, 3], [2, 7], [7, 9], [3, 4], [3, 8], [8, 5], [4, 0], [4, 9], [9, 6]] },
+];
+
+export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 1024, activeOperation }: GraphInputProps) {
   const [numVertices, setNumVertices] = useState(5);
   const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
 
@@ -19,6 +43,7 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 102
   const [error, setError] = useState("");
   const [edgeWeight, setEdgeWeight] = useState("");
   const [isWeighted, setIsWeighted] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
 
   // Graph class generator state
   const [graphClass, setGraphClass] = useState("");
@@ -34,6 +59,22 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 102
     },
     [onGraphChange]
   );
+
+  const suggestedTemplates = GRAPH_TEMPLATES.filter((template) => !activeOperation || template.operations.includes(activeOperation));
+
+  const applyTemplate = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    const template = GRAPH_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    setError("");
+    setNumVertices(template.numVertices);
+    setEdges(template.edges);
+    setIsWeighted(Boolean(template.weighted));
+    setEdgeSrc("");
+    setEdgeDest("");
+    setEdgeWeight("");
+    emitChange(template.numVertices, template.edges);
+  };
 
   // --- Node Operations ---
   const addNode = () => {
@@ -307,6 +348,37 @@ export default function GraphInput({ onGraphChange, onFileLoaded, maxNodes = 102
         </svg>
         Graph Input
       </h3>
+
+      {/* Task Templates */}
+      <div className="space-y-2 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.04] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <label className="block text-xs text-cyan-300/80 uppercase tracking-wider">Template Graf Tugas</label>
+          <span className="text-[10px] text-white/35">{suggestedTemplates.length} cocok</span>
+        </div>
+        <select
+          value={selectedTemplate}
+          onChange={(e) => applyTemplate(e.target.value)}
+          className="glass-input w-full text-sm text-white/80"
+        >
+          <option value="">Pilih template siap demo...</option>
+          {suggestedTemplates.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.label}
+            </option>
+          ))}
+          <option value="" disabled>────────── Semua template ──────────</option>
+          {GRAPH_TEMPLATES.filter((template) => !suggestedTemplates.includes(template)).map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.label}
+            </option>
+          ))}
+        </select>
+        {selectedTemplate && (
+          <p className="text-xs leading-relaxed text-white/45">
+            {GRAPH_TEMPLATES.find((template) => template.id === selectedTemplate)?.hint}
+          </p>
+        )}
+      </div>
 
       {/* Generate Graph Class */}
       <div className="space-y-2">
