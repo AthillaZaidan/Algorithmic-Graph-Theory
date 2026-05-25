@@ -98,7 +98,7 @@ export function isHypercubeGraph(vertexCount: number, edgeList: number[][]) {
 export function halesHypercubeOrder(vertexCount: number) {
   return Array.from({ length: vertexCount }, (_, i) => i).sort((a, b) => {
     const byWeight = popcount(a) - popcount(b);
-    return byWeight || a - b;
+    return byWeight || b - a;
   });
 }
 
