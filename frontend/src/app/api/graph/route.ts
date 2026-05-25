@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callCppEngine } from "@/lib/cpp-bridge";
 import { GraphRequest, GraphResponse } from "@/lib/cpp-bridge";
+import { solveBandwidth } from "@/lib/bandwidth";
 
 const VALID_OPERATIONS = [
   "dfs", "bfs", "check_path", "check_connectivity",
@@ -155,38 +156,7 @@ function maximumBipartiteMatching(body: GraphRequest): GraphResponse {
 
 function graphBandwidth(body: GraphRequest): GraphResponse {
   const numVertices = body.numVertices ?? 0;
-  const edges = (body.edges ?? [])
-    .map((edge) => [edge[0], edge[1]])
-    .filter(([u, v]) =>
-      Number.isInteger(u) &&
-      Number.isInteger(v) &&
-      u >= 0 &&
-      u < numVertices &&
-      v >= 0 &&
-      v < numVertices &&
-      u !== v
-    );
-
-  let bandwidth = 0;
-  const bandwidthEdges: number[][] = [];
-
-  for (const [u, v] of edges) {
-    const width = Math.abs(u - v);
-
-    if (width > bandwidth) {
-      bandwidth = width;
-      bandwidthEdges.length = 0;
-      bandwidthEdges.push([u, v]);
-    } else if (width === bandwidth) {
-      bandwidthEdges.push([u, v]);
-    }
-  }
-
-  return {
-    success: true,
-    bandwidth,
-    bandwidthEdges,
-  };
+  return solveBandwidth(numVertices, body.edges ?? []);
 }
 
 interface TimetableEdge {

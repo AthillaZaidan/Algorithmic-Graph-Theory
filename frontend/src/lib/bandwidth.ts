@@ -7,7 +7,7 @@ export interface BandwidthResult {
   bandwidthPositions: number[];
   bandwidthSteps: number[][];
   isOptimal: boolean;
-  method: "exact_bruteforce" | "hales_hypercube" | "reverse_cuthill_mckee";
+  method: "cuthill_mckee";
 }
 
 export function normalizeEdges(vertexCount: number, edges: number[][]) {
@@ -64,44 +64,6 @@ export function criticalEdgesForOrder(order: number[], edgeList: number[][], ban
   });
 }
 
-function popcount(value: number) {
-  let count = 0;
-  let n = value;
-  while (n > 0) {
-    count += n & 1;
-    n >>>= 1;
-  }
-  return count;
-}
-
-function isPowerOfTwo(value: number) {
-  return value > 0 && (value & (value - 1)) === 0;
-}
-
-export function isHypercubeGraph(vertexCount: number, edgeList: number[][]) {
-  if (!isPowerOfTwo(vertexCount)) return false;
-  const dim = Math.log2(vertexCount);
-  if (!Number.isInteger(dim)) return false;
-  if (edgeList.length !== (vertexCount * dim) / 2) return false;
-
-  const edgeSet = new Set(edgeList.map(([u, v]) => `${Math.min(u, v)}-${Math.max(u, v)}`));
-  for (let u = 0; u < vertexCount; u++) {
-    for (let bit = 0; bit < dim; bit++) {
-      const v = u ^ (1 << bit);
-      const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
-      if (!edgeSet.has(key)) return false;
-    }
-  }
-  return true;
-}
-
-export function halesHypercubeOrder(vertexCount: number) {
-  return Array.from({ length: vertexCount }, (_, i) => i).sort((a, b) => {
-    const byWeight = popcount(a) - popcount(b);
-    return byWeight || b - a;
-  });
-}
-
 export function cuthillMckeeOrder(vertexCount: number, edgeList: number[][]) {
   const adj = Array.from({ length: vertexCount }, () => new Set<number>());
   edgeList.forEach(([u, v]) => {
@@ -139,78 +101,18 @@ export function cuthillMckeeOrder(vertexCount: number, edgeList: number[][]) {
   return order;
 }
 
-function exactOrder(vertexCount: number, edgeList: number[][], initialOrder: number[]) {
-  let bestOrder = [...initialOrder];
-  let bestBandwidth = bandwidthForOrder(bestOrder, edgeList);
-  const steps: number[][] = [initialOrder];
-  const perm = [...initialOrder];
-
-  const permute = (start: number) => {
-    if (start === perm.length) {
-      const bw = bandwidthForOrder(perm, edgeList);
-      if (bw < bestBandwidth) {
-        bestBandwidth = bw;
-        bestOrder = [...perm];
-        if (steps.length < 24) steps.push([...perm]);
-      }
-      return;
-    }
-
-    for (let i = start; i < perm.length; i++) {
-      [perm[start], perm[i]] = [perm[i], perm[start]];
-      permute(start + 1);
-      [perm[start], perm[i]] = [perm[i], perm[start]];
-    }
-  };
-
-  permute(0);
-  return { bestOrder, bestBandwidth, steps };
-}
-
 export function solveBandwidth(vertexCount: number, edges: number[][]): BandwidthResult {
   const edgeList = normalizeEdges(vertexCount, edges);
   const initialOrder = Array.from({ length: vertexCount }, (_, i) => i);
   const initialBandwidth = bandwidthForOrder(initialOrder, edgeList);
-  let bestOrder = [...initialOrder];
-  let bestBandwidth = initialBandwidth;
-  let bandwidthSteps: number[][] = [initialOrder];
-  let isOptimal = vertexCount <= 9;
-  let method: BandwidthResult["method"] = isOptimal ? "exact_bruteforce" : "reverse_cuthill_mckee";
-
-  if (isOptimal) {
-    const exact = exactOrder(vertexCount, edgeList, initialOrder);
-    bestOrder = exact.bestOrder;
-    bestBandwidth = exact.bestBandwidth;
-    bandwidthSteps = exact.steps;
-  } else if (isHypercubeGraph(vertexCount, edgeList)) {
-    bestOrder = halesHypercubeOrder(vertexCount);
-    bestBandwidth = bandwidthForOrder(bestOrder, edgeList);
-    bandwidthSteps = [initialOrder, bestOrder];
-    isOptimal = true;
-    method = "hales_hypercube";
-  } else {
-    const cm = cuthillMckeeOrder(vertexCount, edgeList);
-    const rcm = [...cm].reverse();
-    const candidates = [cm, rcm];
-    bandwidthSteps = [initialOrder, cm, rcm];
-
-    candidates.forEach((order) => {
-      const bw = bandwidthForOrder(order, edgeList);
-      if (bw < bestBandwidth) {
-        bestBandwidth = bw;
-        bestOrder = [...order];
-      }
-    });
-  }
+  const bestOrder = cuthillMckeeOrder(vertexCount, edgeList);
+  const bestBandwidth = bandwidthForOrder(bestOrder, edgeList);
+  const bandwidthSteps = initialOrder.join(",") === bestOrder.join(",") ? [initialOrder] : [initialOrder, bestOrder];
 
   const bandwidthPositions = Array.from({ length: vertexCount }, () => 0);
   bestOrder.forEach((node, index) => {
     bandwidthPositions[node] = index;
   });
-
-  if (bandwidthSteps[bandwidthSteps.length - 1].join(",") !== bestOrder.join(",")) {
-    bandwidthSteps.push(bestOrder);
-  }
 
   return {
     success: true,
@@ -220,8 +122,8 @@ export function solveBandwidth(vertexCount: number, edges: number[][]): Bandwidt
     bandwidthOrder: bestOrder,
     bandwidthPositions,
     bandwidthSteps,
-    isOptimal,
-    method,
+    isOptimal: false,
+    method: "cuthill_mckee",
   };
 }
 

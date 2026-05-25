@@ -152,14 +152,14 @@ json hitungJumlahIsland(const vector<string>& grid) {
     int islandCount = 0;
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
-            if (grid[i][j] == '1' && labels[i][j] == 0) {
+            if ((grid[i][j] == '1' || grid[i][j] == '*') && labels[i][j] == 0) {
                 islandCount++;
                 queue<pair<int,int>> q; q.push({i,j}); labels[i][j] = islandCount;
                 while (!q.empty()) {
                     auto [r,c] = q.front(); q.pop();
                     for (auto [dr,dc] : vector<pair<int,int>>{{-1,0},{1,0},{0,-1},{0,1}}) {
                         int nr = r+dr, nc = c+dc;
-                        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] == '1' && labels[nr][nc] == 0) {
+                        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && (grid[nr][nc] == '1' || grid[nr][nc] == '*') && labels[nr][nc] == 0) {
                             labels[nr][nc] = islandCount; q.push({nr,nc});
                         }
                     }
@@ -632,45 +632,14 @@ json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
     vector<int> initialOrder(N);
     iota(initialOrder.begin(), initialOrder.end(), 0);
     int initialBandwidth = bandwidthForOrder(N, edgeList, initialOrder);
-    vector<int> bestOrder = initialOrder;
-    int bestBandwidth = initialBandwidth;
+    vector<int> bestOrder = cuthillMckeeOrder(N, edgeList);
+    int bestBandwidth = bandwidthForOrder(N, edgeList, bestOrder);
     vector<vector<int>> steps;
     steps.push_back(initialOrder);
-    bool isOptimal = N <= 9;
-    string method = isOptimal ? "exact_bruteforce" : "reverse_cuthill_mckee";
-
-    if (isOptimal) {
-        vector<int> perm = initialOrder;
-        do {
-            int bw = bandwidthForOrder(N, edgeList, perm);
-            if (bw < bestBandwidth) {
-                bestBandwidth = bw;
-                bestOrder = perm;
-                if ((int)steps.size() < 24) steps.push_back(bestOrder);
-                if (bestBandwidth == 0) break;
-            }
-        } while (next_permutation(perm.begin(), perm.end()));
-    } else if (isHypercubeGraph(N, edgeList)) {
-        bestOrder = halesHypercubeOrder(N);
-        bestBandwidth = bandwidthForOrder(N, edgeList, bestOrder);
-        steps.push_back(bestOrder);
-        isOptimal = true;
-        method = "hales_hypercube";
-    } else {
-        vector<int> cm = cuthillMckeeOrder(N, edgeList);
-        vector<int> rcm = cm;
-        reverse(rcm.begin(), rcm.end());
-        int cmBandwidth = bandwidthForOrder(N, edgeList, cm);
-        int rcmBandwidth = bandwidthForOrder(N, edgeList, rcm);
-        steps.push_back(cm);
-        steps.push_back(rcm);
-        if (cmBandwidth < bestBandwidth) { bestBandwidth = cmBandwidth; bestOrder = cm; }
-        if (rcmBandwidth < bestBandwidth) { bestBandwidth = rcmBandwidth; bestOrder = rcm; }
-    }
+    if (steps.back() != bestOrder) steps.push_back(bestOrder);
 
     vector<int> positions(N, 0);
     for (int i = 0; i < N; i++) positions[bestOrder[i]] = i;
-    if (steps.empty() || steps.back() != bestOrder) steps.push_back(bestOrder);
 
     return {
         {"bandwidth", bestBandwidth},
@@ -679,8 +648,8 @@ json computeBandwidth(int N, const vector<pair<int,int>>& edgeList) {
         {"bandwidthOrder", bestOrder},
         {"bandwidthPositions", positions},
         {"bandwidthSteps", steps},
-        {"isOptimal", isOptimal},
-        {"method", method}
+        {"isOptimal", false},
+        {"method", "cuthill_mckee"}
     };
 }
 
