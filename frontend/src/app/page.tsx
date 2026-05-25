@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useCallback, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+import BandwidthD3Visualizer from "@/components/BandwidthD3Visualizer";
 import GraphInput from "@/components/GraphInput";
-import GraphVisualizer from "@/components/GraphVisualizer";
+import GraphViewToggle from "@/components/GraphViewToggle";
 import GridVisualizer from "@/components/GridVisualizer";
 import ResultPanel from "@/components/ResultPanel";
 import TimetableVisualizer from "@/components/TimetableVisualizer";
 import TimetablingInput, { TimetablingConfig } from "@/components/TimetablingInput";
+import type { CityMapPoint } from "@/components/TspIndonesiaMap";
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 import { CITY_PRESETS, ALL_INDONESIA_PRESET } from "@/lib/city-data";
+import { getTspCoordinateDisplayEdges } from "@/lib/tsp-coordinate-display";
+import { getTspTourFrame } from "@/lib/tsp-search-animation";
 import {
   bandwidthForOrder,
   criticalEdgesForOrder,
@@ -18,6 +23,10 @@ import {
   positionsForOrder,
   solveBandwidth,
 } from "@/lib/bandwidth";
+
+const TspIndonesiaMap = dynamic(() => import("@/components/TspIndonesiaMap"), {
+  ssr: false,
+});
 
 type Operation =
   | "dfs"
@@ -122,13 +131,16 @@ export default function Home() {
   const [tspTourEdges, setTspTourEdges] = useState<number[][]>([]);
   const [tspTotalCost, setTspTotalCost] = useState<number | undefined>();
   const [tspStartNode, setTspStartNode] = useState<number | undefined>();
+  const [isTspTourAnimating, setIsTspTourAnimating] = useState(false);
   const [tspMode, setTspMode] = useState<"edge" | "coordinate">("edge");
+  const [tspCoordinateView, setTspCoordinateView] = useState<"graph" | "map">("graph");
   const [coordinates, setCoordinates] = useState<{ x: number; y: number }[]>([
     { x: 0, y: 0 },
     { x: 100, y: 0 },
     { x: 50, y: 87 },
   ]);
   const [cityNames, setCityNames] = useState<string[]>([]);
+  const [cityMapPoints, setCityMapPoints] = useState<CityMapPoint[]>([]);
   const [coordPreset, setCoordPreset] = useState("");
   const [graphPreset, setGraphPreset] = useState("");
   const [coordN, setCoordN] = useState(6);
@@ -140,32 +152,79 @@ export default function Home() {
 
   const [coordStructEdges, setCoordStructEdges] = useState<number[][]>([]);
 
+  const animationRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const tspFinalTourRef = useRef<{ tour: number[]; tourEdges: number[][] } | null>(null);
+
+  const clearAnimations = useCallback(() => {
+    animationRef.current.forEach(clearTimeout);
+    animationRef.current = [];
+  }, []);
+
+  const skipTspTourAnimation = useCallback(() => {
+    const finalTour = tspFinalTourRef.current;
+    if (!finalTour) return;
+
+    clearAnimations();
+    setTspTour(finalTour.tour);
+    setTspTourEdges(finalTour.tourEdges);
+    setHighlightNodes(Array.from(new Set(finalTour.tour)));
+    setHighlightEdges(finalTour.tourEdges.map(([u, v]) => [u, v]));
+    setIsTspTourAnimating(false);
+  }, [clearAnimations]);
+
+  const clearBandwidthLayout = useCallback(() => {
+    setBandwidthScanEdge(undefined);
+    setBandwidthBestEdges([]);
+    setBandwidthBestValue(undefined);
+    setBandwidthNodePositions(undefined);
+    setBandwidthAnimatedOrder([]);
+    setGraphLayoutVersion((v) => v + 1);
+  }, []);
+
+  const clearResultState = useCallback(() => {
+    clearAnimations();
+    setResult(null);
+    setError("");
+    setHighlightNodes([]);
+    setHighlightEdges([]);
+    setComponentColors(new Map());
+    setIslandLabels(undefined);
+    setIslandCount(undefined);
+    setBipartiteColors(new Map());
+    setCyclePathNodes([]);
+    setDiameterPath([]);
+    setDiameterLength(undefined);
+    setGirthValue(undefined);
+    setGirthCycle([]);
+    setMstEdges([]);
+    setMstTotalWeight(undefined);
+    setBandwidthScanEdge(undefined);
+    setBandwidthBestEdges([]);
+    setBandwidthBestValue(undefined);
+    setBandwidthNodePositions(undefined);
+    setBandwidthAnimatedOrder([]);
+    setTspTour([]);
+    setTspTourEdges([]);
+    setIsTspTourAnimating(false);
+    tspFinalTourRef.current = null;
+    setTspTotalCost(undefined);
+    setTspStartNode(undefined);
+  }, [clearAnimations]);
+
   const coordDisplayEdges = useMemo(() => {
     if (activeTab !== "tsp_grasp_swap" || tspMode !== "coordinate") return [];
-    if (coordStructEdges.length > 0) return coordStructEdges;
-    const n = coordinates.length;
-    const result: number[][] = [];
-    const edgeSet = new Set<string>();
-    const add = (u: number, v: number) => {
-      if (u === v) return;
-      const key = `${Math.min(u, v)}-${Math.max(u, v)}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        const dx = coordinates[u].x - coordinates[v].x;
-        const dy = coordinates[u].y - coordinates[v].y;
-        const w = Math.round(Math.sqrt(dx * dx + dy * dy) * 100) / 100;
-        result.push([u, v, w]);
-      }
-    };
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        add(i, j);
-      }
-    }
-    return result;
-  }, [activeTab, tspMode, coordinates, coordStructEdges]);
+    return getTspCoordinateDisplayEdges(coordinates, coordStructEdges, tspTourEdges);
+  }, [activeTab, tspMode, coordinates, coordStructEdges, tspTourEdges]);
+
+  const canShowCoordinateMap =
+    activeTab === "tsp_grasp_swap" &&
+    tspMode === "coordinate" &&
+    cityMapPoints.length > 0 &&
+    cityMapPoints.length === coordinates.length;
 
   const generateCoordPreset = () => {
+    clearResultState();
+
     const preset = allCityPresets.find(p => p.id === coordPreset);
     if (preset) {
       const minLat = Math.min(...preset.cities.map(c => c.lat));
@@ -180,8 +239,10 @@ export default function Home() {
       }));
       setCoordinates(pts);
       setCityNames(preset.cities.map(c => c.name));
+      setCityMapPoints(preset.cities.map(c => ({ name: c.name, lat: c.lat, lng: c.lng })));
       setCoordStructEdges([]);
       setStartNode(0);
+      setTspCoordinateView("map");
       return;
     }
 
@@ -343,76 +404,31 @@ export default function Home() {
     }
     setCoordinates(pts);
     setCityNames([]);
+    setCityMapPoints([]);
     setCoordStructEdges(structEdges);
     setStartNode(0);
+    setTspCoordinateView("graph");
   };
 
-  const animationRef = useRef<NodeJS.Timeout[]>([]);
-
-  const clearAnimations = useCallback(() => {
-    animationRef.current.forEach(clearTimeout);
-    animationRef.current = [];
-  }, []);
-
-  const clearBandwidthLayout = useCallback(() => {
-    setBandwidthScanEdge(undefined);
-    setBandwidthBestEdges([]);
-    setBandwidthBestValue(undefined);
-    setBandwidthNodePositions(undefined);
-    setBandwidthAnimatedOrder([]);
-    setGraphLayoutVersion((v) => v + 1);
-  }, []);
-
-
   const handleGraphChange = useCallback((nv: number, e: number[][]) => {
-    clearAnimations();
+    clearResultState();
     setNumVertices(nv);
     setEdges(e);
     setIsWeightedMode(e.some((edge) => edge[2] !== undefined));
-    setResult(null);
-    setHighlightNodes([]);
-    setHighlightEdges([]);
     clearBandwidthLayout();
-  }, [clearAnimations, clearBandwidthLayout]);
+  }, [clearBandwidthLayout, clearResultState]);
 
   const handleFileLoaded = useCallback((nv: number, e: number[][], weighted: boolean) => {
-    clearAnimations();
+    clearResultState();
     setNumVertices(nv);
     setEdges(e);
     setIsWeightedMode(weighted);
-    setResult(null);
-    setHighlightNodes([]);
-    setHighlightEdges([]);
     clearBandwidthLayout();
-  }, [clearAnimations, clearBandwidthLayout]);
+  }, [clearBandwidthLayout, clearResultState]);
 
   const runOperation = async () => {
     setLoading(true);
-    setError("");
-    setResult(null);
-    setHighlightNodes([]);
-    setHighlightEdges([]);
-    setComponentColors(new Map());
-    setIslandLabels(undefined);
-    setIslandCount(undefined);
-    setBipartiteColors(new Map());
-    setCyclePathNodes([]);
-    setDiameterPath([]);
-    setDiameterLength(undefined);
-    setGirthValue(undefined);
-    setGirthCycle([]);
-    setMstEdges([]);
-    setMstTotalWeight(undefined);
-    setBandwidthScanEdge(undefined);
-    setBandwidthBestEdges([]);
-    setBandwidthBestValue(undefined);
-    setBandwidthNodePositions(undefined);
-    setBandwidthAnimatedOrder([]);
-    setTspTour([]);
-    setTspTourEdges([]);
-    setTspTotalCost(undefined);
-    setTspStartNode(undefined);
-    clearAnimations();
+    clearResultState();
 
     const body: GraphRequest = { operation: activeTab };
 
@@ -460,6 +476,8 @@ export default function Home() {
       try {
         if (activeTab === "bandwidth") {
           data = solveBandwidth(numVertices, edges);
+        } else if (activeTab === "tsp_grasp_swap") {
+          data = await callApiRoute();
         } else {
           data = await callWasmEngine(body);
           if (
@@ -656,12 +674,33 @@ export default function Home() {
         if (data.feasible && data.tour && data.tourEdges) {
           const tour = data.tour as number[];
           const tourEdges = data.tourEdges as number[][];
-          setTspTour(tour);
-          setTspTourEdges(tourEdges);
+          clearAnimations();
+          tspFinalTourRef.current = { tour, tourEdges };
+          setTspTour([]);
+          setTspTourEdges([]);
           setTspTotalCost(data.totalCost as number);
           setTspStartNode(data.startNode as number);
-          setHighlightNodes(Array.from(new Set(tour)));
-          setHighlightEdges(tourEdges.map(([u, v]) => [u, v]));
+          setIsTspTourAnimating(true);
+
+          tourEdges.forEach((_edge, i) => {
+            const t = setTimeout(() => {
+              const frame = getTspTourFrame(tour, tourEdges, i);
+              setTspTour(frame.nodes);
+              setTspTourEdges(frame.edges);
+              setHighlightNodes(frame.nodes);
+              setHighlightEdges(frame.edges.map(([u, v]) => [u, v]));
+            }, i * 90);
+            animationRef.current.push(t);
+          });
+
+          const finish = setTimeout(() => {
+            setTspTour(tour);
+            setTspTourEdges(tourEdges);
+            setHighlightNodes(Array.from(new Set(tour)));
+            setHighlightEdges(tourEdges.map(([u, v]) => [u, v]));
+            setIsTspTourAnimating(false);
+          }, tourEdges.length * 90 + 80);
+          animationRef.current.push(finish);
         }
       }
     } catch (err) {
@@ -1322,7 +1361,18 @@ export default function Home() {
                 </div>
 
                 <div className="glass border border-orange-400/20 p-4">
-                  <p className="mb-3 text-sm font-semibold text-orange-300">Jalur hasil TSP GRASP+Swap</p>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-orange-300">Jalur hasil TSP GRASP+Swap</p>
+                    {isTspTourAnimating && (
+                      <button
+                        type="button"
+                        onClick={skipTspTourAnimation}
+                        className="rounded-lg border border-orange-300/25 bg-orange-300/10 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-orange-300/18"
+                      >
+                        Skip animasi
+                      </button>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {tspTour.map((node: number, i: number) => (
                       <span key={`${node}-${i}`} className="flex items-center gap-1.5">
@@ -1819,6 +1869,36 @@ export default function Home() {
                     </span>
                   </div>
 
+                  {canShowCoordinateMap && (
+                    <div className="space-y-2">
+                      <label className="block text-xs text-white/50 uppercase tracking-wider">Tampilan Visualisasi</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTspCoordinateView("map")}
+                          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            tspCoordinateView === "map"
+                              ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300"
+                              : "glass-btn text-white/50 hover:text-white/80"
+                          }`}
+                        >
+                          Peta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTspCoordinateView("graph")}
+                          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            tspCoordinateView === "graph"
+                              ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300"
+                              : "glass-btn text-white/50 hover:text-white/80"
+                          }`}
+                        >
+                          Graf
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Coordinate Preset */}
                   <div className="space-y-2">
                     <label className="block text-xs text-white/50 uppercase tracking-wider">Preset Kota / Kabupaten</label>
@@ -1826,6 +1906,7 @@ export default function Home() {
                       <select
                         value={allCityPresets.some(p => p.id === coordPreset) ? coordPreset : ""}
                         onChange={(e) => {
+                          clearResultState();
                           setCoordPreset(e.target.value);
                           setGraphPreset("");
                         }}
@@ -1869,8 +1950,11 @@ export default function Home() {
                       <select
                         value={graphPreset}
                         onChange={(e) => {
+                          clearResultState();
                           setGraphPreset(e.target.value);
                           setCoordPreset("");
+                          setCityMapPoints([]);
+                          setTspCoordinateView("graph");
                         }}
                         className="glass-input flex-1 text-sm text-white/80"
                       >
@@ -1972,7 +2056,12 @@ export default function Home() {
                           className="glass-input w-full text-center text-sm font-mono py-1.5"
                         />
                         <button
-                          onClick={() => { setCoordinates(coordinates.filter((_, i) => i !== idx)); setCoordStructEdges([]); setCityNames(cityNames.filter((_, i) => i !== idx)); }}
+                          onClick={() => {
+                            setCoordinates(coordinates.filter((_, i) => i !== idx));
+                            setCoordStructEdges([]);
+                            setCityNames(cityNames.filter((_, i) => i !== idx));
+                            setCityMapPoints(cityMapPoints.filter((_, i) => i !== idx));
+                          }}
                           className="flex items-center justify-center text-red-400/40 hover:text-red-400 transition-colors"
                           title="Hapus node"
                         >
@@ -1986,7 +2075,13 @@ export default function Home() {
 
                   <div className="flex gap-2 pt-1">
                     <button
-                      onClick={() => { setCoordinates([...coordinates, { x: 0, y: 0 }]); setCoordStructEdges([]); setCityNames([...cityNames, ""]); }}
+                      onClick={() => {
+                        setCoordinates([...coordinates, { x: 0, y: 0 }]);
+                        setCoordStructEdges([]);
+                        setCityNames([...cityNames, ""]);
+                        setCityMapPoints([]);
+                        setTspCoordinateView("graph");
+                      }}
                       className="flex-1 glass-btn px-3 py-2 rounded-lg text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15 flex items-center justify-center gap-1.5"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2002,6 +2097,8 @@ export default function Home() {
                           y: Math.round(Math.sin((2 * Math.PI * i) / Math.max(3, n)) * 100 * 100) / 100,
                         }));
                         setCoordinates(newCoords);
+                        setCityMapPoints([]);
+                        setTspCoordinateView("graph");
                       }}
                       className="flex-1 glass-btn px-3 py-2 rounded-lg text-purple-400 text-xs font-semibold hover:bg-purple-400/15 flex items-center justify-center gap-1.5"
                     >
@@ -2124,8 +2221,8 @@ export default function Home() {
           {activeTab === "tsp_grasp_swap" && (
             <div className="rounded-xl border border-rose-400/15 bg-rose-400/8 px-4 py-3 text-sm text-white/55">
               {tspMode === "coordinate"
-                ? "TSP koordinat mode: jarak dihitung dari Euclidean distance antar titik. Backend membatasi maksimum 50 node."
-                : "GRASP + 2-Opt Swap membangun tour heuristic. Backend membatasi TSP edge mode ke maksimum 50 node."}
+                ? "TSP koordinat mode: jarak dihitung dari Euclidean distance antar titik. Visualisasi besar hanya menggambar node dan edge tour hasil algoritma."
+                : "GRASP + 2-Opt Swap membangun tour heuristic dari edge berbobot yang diinput."}
             </div>
           )}
         </div>
@@ -2133,41 +2230,60 @@ export default function Home() {
         {/* Right: Visualization + Results */}
         <div className="lg:col-span-3 space-y-4">
           {/* Graph Visualizer (for graph operations) */}
-          {isGraphOp && (
-            <GraphVisualizer
-              key={`${activeTab}-${graphLayoutVersion}`}
-              numVertices={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates.length : numVertices}
-              edges={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordDisplayEdges : edges}
-              highlightNodes={highlightNodes}
-              highlightEdges={highlightEdges}
-              componentColors={componentColors.size > 0 ? componentColors : undefined}
-              bipartiteColors={bipartiteColors.size > 0 ? bipartiteColors : undefined}
-              cyclePathNodes={cyclePathNodes}
-              diameterPathNodes={diameterPath}
-              girthCycleNodes={girthCycle}
-              mstEdges={mstEdges}
-              bandwidthScanEdge={bandwidthScanEdge}
-              bandwidthBestEdges={bandwidthBestEdges}
-              tspTourNodes={tspTour}
+          {isGraphOp && canShowCoordinateMap && tspCoordinateView === "map" ? (
+            <TspIndonesiaMap
+              cities={cityMapPoints}
               tspTourEdges={tspTourEdges}
               tspStartNode={tspStartNode}
-              nodePositions={
-                activeTab === "bandwidth"
-                  ? bandwidthNodePositions
-                  : activeTab === "tsp_grasp_swap" && tspMode === "coordinate"
-                  ? coordinates
-                  : undefined
-              }
-              nodeLabels={
-                activeTab === "bandwidth"
-                  ? bandwidthDisplayLabels
-                  : activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0
-                  ? cityNames
-                  : undefined
-              }
-              showCoordGrid={activeTab === "bandwidth" ? false : undefined}
-              lockNodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate"}
             />
+          ) : isGraphOp && (
+            <div>
+              <GraphViewToggle
+                key={`${activeTab}-${graphLayoutVersion}`}
+                numVertices={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordinates.length : numVertices}
+                edges={activeTab === "tsp_grasp_swap" && tspMode === "coordinate" ? coordDisplayEdges : edges}
+                highlightNodes={highlightNodes}
+                highlightEdges={highlightEdges}
+                componentColors={componentColors.size > 0 ? componentColors : undefined}
+                bipartiteColors={bipartiteColors.size > 0 ? bipartiteColors : undefined}
+                cyclePathNodes={cyclePathNodes}
+                diameterPathNodes={diameterPath}
+                girthCycleNodes={girthCycle}
+                mstEdges={mstEdges}
+                bandwidthScanEdge={bandwidthScanEdge}
+                bandwidthBestEdges={bandwidthBestEdges}
+                tspTourNodes={tspTour}
+                tspTourEdges={tspTourEdges}
+                tspStartNode={tspStartNode}
+                nodePositions={
+                  activeTab === "bandwidth"
+                    ? bandwidthNodePositions
+                    : activeTab === "tsp_grasp_swap" && tspMode === "coordinate"
+                    ? coordinates
+                    : undefined
+                }
+                nodeLabels={
+                  activeTab === "bandwidth"
+                    ? bandwidthDisplayLabels
+                    : activeTab === "tsp_grasp_swap" && tspMode === "coordinate" && cityNames.length > 0
+                    ? cityNames
+                    : undefined
+                }
+                showCoordGrid={activeTab === "bandwidth" ? false : undefined}
+                lockNodePositions={activeTab === "tsp_grasp_swap" && tspMode === "coordinate"}
+              />
+              {activeTab === "bandwidth" && (
+                <div className="mt-4">
+                  <BandwidthD3Visualizer
+                    numVertices={numVertices}
+                    edges={edges}
+                    order={bandwidthDisplayOrder}
+                    criticalEdges={bandwidthBestEdges.length > 0 ? bandwidthBestEdges : (result?.bandwidthEdges as number[][]) || []}
+                    bandwidth={bandwidthBestValue ?? (result?.bandwidth as number | undefined)}
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {isTimetabling && (
