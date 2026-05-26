@@ -18,6 +18,7 @@ import { solveIslands } from "@/lib/islands";
 import { getTspCoordinateDisplayEdges } from "@/lib/tsp-coordinate-display";
 import { getTspTourFrame } from "@/lib/tsp-search-animation";
 import { parseTspFile } from "@/lib/tsp-parser";
+import { solveTspCoordinate, type TspAlgorithm } from "@/lib/tsp-solver";
 import {
   bandwidthForOrder,
   criticalEdgesForOrder,
@@ -137,6 +138,7 @@ export default function Home() {
   const [tspStartNode, setTspStartNode] = useState<number | undefined>();
   const [isTspTourAnimating, setIsTspTourAnimating] = useState(false);
   const [tspMode, setTspMode] = useState<"edge" | "coordinate">("edge");
+  const [tspAlgorithm, setTspAlgorithm] = useState<TspAlgorithm>("best-multistart");
   const [tspCoordinateView, setTspCoordinateView] = useState<"graph" | "map">("graph");
   const [coordinates, setCoordinates] = useState<{ x: number; y: number }[]>([
     { x: 0, y: 0 },
@@ -233,15 +235,9 @@ export default function Home() {
 
     const preset = allCityPresets.find(p => p.id === coordPreset);
     if (preset) {
-      const minLat = Math.min(...preset.cities.map(c => c.lat));
-      const maxLat = Math.max(...preset.cities.map(c => c.lat));
-      const minLng = Math.min(...preset.cities.map(c => c.lng));
-      const maxLng = Math.max(...preset.cities.map(c => c.lng));
-      const rangeX = maxLng - minLng || 1;
-      const rangeY = maxLat - minLat || 1;
       const pts = preset.cities.map(c => ({
-        x: Math.round(((c.lng - minLng) / rangeX) * 200 - 100) * 100 / 100,
-        y: Math.round((1 - (c.lat - minLat) / rangeY) * 200 - 100) * 100 / 100,
+        x: c.lng,
+        y: c.lat,
       }));
       setCoordinates(pts);
       setCityNames(preset.cities.map(c => c.name));
@@ -524,6 +520,8 @@ export default function Home() {
         } else if (activeTab === "count_islands") {
           data = await callApiRoute();
           if (!data.success) data = solveIslands(grid);
+        } else if (activeTab === "tsp_grasp_swap" && tspMode === "coordinate") {
+          data = solveTspCoordinate(coordinates, startNode, cityMapPoints.length === coordinates.length, tspAlgorithm);
         } else {
           data = await callWasmEngine(body);
           if (
@@ -730,7 +728,7 @@ export default function Home() {
           tspFinalTourRef.current = { tour, tourEdges };
           setTspTour([]);
           setTspTourEdges([]);
-          setTspTotalCost(data.totalCost as number);
+          setTspTotalCost(data.distanceUnit === "km" ? Math.round(data.totalCost as number) : data.totalCost as number);
           setTspStartNode(data.startNode as number);
           setIsTspTourAnimating(true);
 
@@ -1466,7 +1464,13 @@ export default function Home() {
               <>
                 <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Total Cost</p>
-                  <p className="mt-1 font-mono text-2xl font-bold text-orange-300">{tspTotalCost ?? 0}</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-orange-300">
+                    {tspTotalCost ?? 0}
+                    {result.distanceUnit === "km" && <span className="ml-2 text-sm text-orange-200/70">km</span>}
+                  </p>
+                  {result.algorithm && (
+                    <p className="mt-1 text-xs text-white/45">Algoritma: {String(result.algorithm).replaceAll("-", " ")}</p>
+                  )}
                 </div>
 
                 <div className="glass border border-orange-400/20 p-4">
@@ -1519,7 +1523,9 @@ export default function Home() {
                         <span className="text-cyan-400">{u}</span>
                         <span className="text-white/25">{">"}</span>
                         <span className="text-teal-400">{v}</span>
-                        <span className="ml-auto text-amber-400/80">w={typeof w === "number" ? w.toFixed(2) : w}</span>
+                        <span className="ml-auto text-amber-400/80">
+                          {result.distanceUnit === "km" ? "km" : "w"}={typeof w === "number" ? (result.distanceUnit === "km" ? Math.round(w) : w.toFixed(2)) : w}
+                        </span>
                       </motion.div>
                     ))}
                   </div>
@@ -2102,6 +2108,37 @@ export default function Home() {
                     <span className="text-xs text-white/40 font-mono bg-white/[0.05] px-2 py-1 rounded">
                       {coordinates.length} node
                     </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs text-white/50 uppercase tracking-wider">Algoritma TSP</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        ["best-multistart", "Best Multi-Start"],
+                        ["farthest-insertion", "Farthest + 2-Opt"],
+                        ["cheapest-insertion", "Cheapest + 2-Opt"],
+                        ["nearest-2opt", "Nearest + 2-Opt"],
+                      ] as [TspAlgorithm, string][]).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            clearResultState();
+                            setTspAlgorithm(id);
+                          }}
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                            tspAlgorithm === id
+                              ? "border border-orange-300/45 bg-orange-300/15 text-orange-200"
+                              : "glass-btn text-white/55 hover:text-white/85"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-white/35">
+                      Preset kota/kabupaten dihitung dengan Haversine kilometer. Best Multi-Start mencoba beberapa konstruksi awal lalu ambil tour terbaik.
+                    </p>
                   </div>
 
                   {canShowCoordinateMap && (
