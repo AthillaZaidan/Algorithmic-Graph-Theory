@@ -63,6 +63,8 @@ export interface GraphResponse {
   feasible?: boolean;
   startNode?: number;
   totalCost?: number;
+  distanceUnit?: "km" | "unit";
+  algorithm?: string;
   tour?: number[];
   tourEdges?: number[][];
   matchingSize?: number;
