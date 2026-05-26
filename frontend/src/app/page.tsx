@@ -14,6 +14,7 @@ import type { CityMapPoint } from "@/components/TspIndonesiaMap";
 import { GraphResponse } from "@/lib/cpp-bridge";
 import { callWasmEngine, GraphRequest } from "@/lib/wasm-bridge";
 import { CITY_PRESETS, ALL_INDONESIA_PRESET } from "@/lib/city-data";
+import { solveIslands } from "@/lib/islands";
 import { getTspCoordinateDisplayEdges } from "@/lib/tsp-coordinate-display";
 import { getTspTourFrame } from "@/lib/tsp-search-animation";
 import { parseTspFile } from "@/lib/tsp-parser";
@@ -521,6 +522,7 @@ export default function Home() {
           data = solveBandwidth(numVertices, edges);
         } else if (activeTab === "count_islands") {
           data = await callApiRoute();
+          if (!data.success) data = solveIslands(grid);
         } else {
           data = await callWasmEngine(body);
           if (
@@ -538,6 +540,8 @@ export default function Home() {
       } catch {
         if (activeTab === "bandwidth") {
           data = solveBandwidth(numVertices, edges);
+        } else if (activeTab === "count_islands") {
+          data = solveIslands(grid);
         } else {
           data = await callApiRoute();
         }
