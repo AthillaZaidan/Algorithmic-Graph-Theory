@@ -86,6 +86,7 @@ const COMPONENT_COLORS = [
 export default function Home() {
   const allCityPresets = useMemo(() => [...CITY_PRESETS, ALL_INDONESIA_PRESET], []);
 
+  const [hasStarted, setHasStarted] = useState(false);
   const [activeTab, setActiveTab] = useState<Operation>("dfs");
   const [numVertices, setNumVertices] = useState(5);
   const [edges, setEdges] = useState<number[][]>([[0, 1], [1, 2], [2, 3], [3, 4]]);
@@ -1548,6 +1549,126 @@ export default function Home() {
 
     }
   };
+
+  if (!hasStarted) {
+    const heroNodes = [
+      { x: "16%", y: "28%", size: "h-4 w-4", delay: 0 },
+      { x: "31%", y: "18%", size: "h-6 w-6", delay: 0.1 },
+      { x: "48%", y: "31%", size: "h-5 w-5", delay: 0.2 },
+      { x: "68%", y: "20%", size: "h-7 w-7", delay: 0.3 },
+      { x: "82%", y: "39%", size: "h-4 w-4", delay: 0.4 },
+      { x: "24%", y: "62%", size: "h-7 w-7", delay: 0.15 },
+      { x: "44%", y: "72%", size: "h-4 w-4", delay: 0.25 },
+      { x: "62%", y: "59%", size: "h-5 w-5", delay: 0.35 },
+      { x: "78%", y: "74%", size: "h-6 w-6", delay: 0.45 },
+    ];
+    const heroEdges = [
+      [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [2, 7], [3, 7],
+    ];
+
+    return (
+      <section className="relative min-h-[calc(100vh-7rem)] overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/35">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_75%_72%,rgba(45,212,191,0.16),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.2),rgba(8,47,73,0.3))]" />
+        <div className="absolute inset-0 opacity-35 [background-image:linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:48px_48px]" />
+
+        <div className="absolute inset-0">
+          <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
+            {heroEdges.map(([from, to], index) => {
+              const a = heroNodes[from];
+              const b = heroNodes[to];
+              return (
+                <motion.line
+                  key={`${from}-${to}-svg`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke="rgba(103,232,249,0.42)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ delay: 0.15 + index * 0.05, duration: 0.75 }}
+                />
+              );
+            })}
+          </svg>
+          {heroNodes.map((node, index) => (
+            <motion.div
+              key={index}
+              className={`absolute ${node.size} -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-200/70 bg-cyan-300 shadow-[0_0_28px_rgba(34,211,238,0.75)]`}
+              style={{ left: node.x, top: node.y }}
+              initial={{ opacity: 0, scale: 0.25 }}
+              animate={{ opacity: 1, scale: [1, 1.18, 1] }}
+              transition={{ opacity: { delay: node.delay, duration: 0.35 }, scale: { delay: node.delay, duration: 2.8, repeat: Infinity } }}
+            />
+          ))}
+        </div>
+
+        <div className="relative z-10 flex min-h-[calc(100vh-7rem)] flex-col items-center justify-center px-6 py-16 text-center">
+          <motion.p
+            className="mb-4 text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/75"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+          >
+            Algorithmic Graph Theory
+          </motion.p>
+          <motion.h1
+            className="max-w-4xl text-5xl font-black tracking-tight text-white sm:text-7xl"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.5 }}
+          >
+            Graph Theory{" "}
+            <span className="bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-300 bg-clip-text text-transparent">
+              Visualizer
+            </span>
+          </motion.h1>
+          <motion.p
+            className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
+          >
+            Visualisasi traversal, connectivity, shortest path, MST, TSP, matching, timetabling, dan bandwidth dalam satu dashboard interaktif.
+          </motion.p>
+
+          <motion.button
+            type="button"
+            onClick={() => setHasStarted(true)}
+            className="group mt-10 inline-flex items-center justify-center rounded-full border border-cyan-200/50 bg-cyan-300 px-10 py-4 text-sm font-black uppercase tracking-[0.22em] text-slate-950 shadow-[0_0_45px_rgba(34,211,238,0.35)] transition hover:bg-white hover:shadow-[0_0_70px_rgba(34,211,238,0.55)]"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.45 }}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            Start
+            <span className="ml-3 transition-transform group-hover:translate-x-1">→</span>
+          </motion.button>
+
+          <motion.div
+            className="mt-10 grid w-full max-w-3xl grid-cols-3 gap-3 text-left"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45, duration: 0.5 }}
+          >
+            {[
+              ["17", "graph operations"],
+              ["2D/3D", "visual modes"],
+              ["C++/WASM", "engine bridge"],
+            ].map(([value, label]) => (
+              <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
+                <p className="text-2xl font-black text-cyan-200">{value}</p>
+                <p className="mt-1 text-xs uppercase tracking-wider text-white/45">{label}</p>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-6">
