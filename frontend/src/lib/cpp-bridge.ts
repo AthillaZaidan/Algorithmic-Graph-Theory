@@ -51,6 +51,7 @@ export interface GraphResponse {
   bandwidthEdges?: number[][];
   bandwidthOrder?: number[];
   bandwidthPositions?: number[];
+  bandwidthMatrix?: (number | null)[][];
   bandwidthSteps?: number[][];
   isOptimal?: boolean;
   method?: string;

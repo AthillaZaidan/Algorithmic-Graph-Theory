@@ -5,6 +5,7 @@ export interface BandwidthResult {
   bandwidthEdges: number[][];
   bandwidthOrder: number[];
   bandwidthPositions: number[];
+  bandwidthMatrix: (number | null)[][];
   bandwidthSteps: number[][];
   isOptimal: boolean;
   method: "cuthill_mckee";
@@ -62,6 +63,25 @@ export function criticalEdgesForOrder(order: number[], edgeList: number[][], ban
     const pv = pos.get(v);
     return pu !== undefined && pv !== undefined && Math.abs(pu - pv) === bandwidth;
   });
+}
+
+export function bandwidthMatrixForOrder(vertexCount: number, order: number[], edgeList: number[][]) {
+  const pos = new Map<number, number>();
+  order.forEach((node, index) => pos.set(node, index));
+  const matrix: (number | null)[][] = Array.from({ length: vertexCount }, () =>
+    Array.from({ length: vertexCount }, () => null)
+  );
+
+  for (const [u, v] of edgeList) {
+    const pu = pos.get(u);
+    const pv = pos.get(v);
+    if (pu === undefined || pv === undefined) continue;
+    const width = Math.abs(pu - pv);
+    matrix[u][v] = width;
+    matrix[v][u] = width;
+  }
+
+  return matrix;
 }
 
 export function cuthillMckeeOrder(vertexCount: number, edgeList: number[][]) {
@@ -123,6 +143,7 @@ export function solveBandwidth(vertexCount: number, edges: number[][]): Bandwidt
     bandwidthEdges: criticalEdgesForOrder(bestOrder, edgeList, bestBandwidth),
     bandwidthOrder: bestOrder,
     bandwidthPositions,
+    bandwidthMatrix: bandwidthMatrixForOrder(vertexCount, bestOrder, edgeList),
     bandwidthSteps,
     isOptimal: false,
     method: "cuthill_mckee",

@@ -78,4 +78,15 @@ describe("solveBandwidth", () => {
     expect(result.bandwidth).toBeLessThanOrEqual(result.initialBandwidth);
     expect(result.method).toBe("cuthill_mckee");
   });
+
+  test("returns a calculation matrix with edge label differences", () => {
+    const result = solveBandwidth(4, [[0, 2], [1, 3]]);
+
+    expect(result.bandwidthMatrix).toEqual([
+      [null, null, 1, null],
+      [null, null, null, 1],
+      [1, null, null, null],
+      [null, 1, null, null],
+    ]);
+  });
 });
