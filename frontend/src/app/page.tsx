@@ -1228,8 +1228,11 @@ export default function Home() {
         const beforeOrder = Array.from({ length: numVertices }, (_, i) => i);
         const afterOrder = (result.bandwidthOrder as number[]) || beforeOrder;
         const finalPositions = (result.bandwidthPositions as number[]) || beforeOrder;
+        const bandwidthMatrix = (result.bandwidthMatrix as (number | null)[][]) || [];
         const relabelMap = afterOrder.map((node, index) => `${node}->${index}`);
         const methodLabel = "Cuthill-McKee heuristic";
+        const matrixLimit = 14;
+        const showMatrix = bandwidthMatrix.length > 0 && bandwidthMatrix.length <= matrixLimit;
         return (
           <div className="space-y-3">
             <p className="text-white/60 text-xs uppercase tracking-wide">
@@ -1264,6 +1267,64 @@ export default function Home() {
                 <p className="text-xs text-white/45 mt-1">
                   Bandwidth susunan ini: <span className="font-mono text-yellow-300">{bandwidthBestValue ?? result.bandwidth ?? 0}</span>
                 </p>
+              </div>
+            )}
+            {showMatrix && (
+              <div className="glass p-4 border-violet-400/20">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-violet-300 font-semibold text-sm">Matrix hasil perhitungan bandwidth</p>
+                    <p className="text-xs text-white/45 mt-1">
+                      Isi sel = |pos(u)-pos(v)| untuk edge setelah relabel. Nilai terbesar adalah bandwidth.
+                    </p>
+                  </div>
+                  <span className="rounded-lg bg-violet-400/15 border border-violet-400/25 px-2 py-1 text-xs text-violet-200">
+                    max {result.bandwidth ?? 0}
+                  </span>
+                </div>
+                <div className="max-w-full overflow-auto">
+                  <table className="min-w-max border-separate border-spacing-1 text-xs">
+                    <thead>
+                      <tr>
+                        <th className="h-8 w-8 text-white/35">u\v</th>
+                        {beforeOrder.map((node) => (
+                          <th key={node} className="h-8 w-8 rounded bg-white/[0.04] text-white/50 font-mono">
+                            {node}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bandwidthMatrix.map((row, u) => (
+                        <tr key={u}>
+                          <th className="h-8 w-8 rounded bg-white/[0.04] text-white/50 font-mono">{u}</th>
+                          {row.map((value, v) => {
+                            const isMax = value !== null && value === result.bandwidth;
+                            return (
+                              <td
+                                key={`${u}-${v}`}
+                                className={`h-8 w-8 rounded text-center font-mono ${
+                                  isMax
+                                    ? "bg-cyan-400/25 text-cyan-100 border border-cyan-300/40"
+                                    : value !== null
+                                      ? "bg-violet-400/15 text-violet-100"
+                                      : "bg-white/[0.025] text-white/15"
+                                }`}
+                              >
+                                {value ?? "·"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {bandwidthMatrix.length > matrixLimit && (
+              <div className="glass p-3 border-violet-400/15 text-xs text-white/50">
+                Matrix bandwidth disembunyikan karena graf punya {bandwidthMatrix.length} node. Batas tampilan matrix: {matrixLimit} node.
               </div>
             )}
             <div className="glass p-4 border-cyan-400/30">
