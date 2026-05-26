@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { MapView } from "@deck.gl/core";
-import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { ArcLayer, ColumnLayer, PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import Map from "react-map-gl/maplibre";
 import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
@@ -62,8 +62,8 @@ function initialViewState(cities: CityMapPoint[]) {
     longitude: (minLng + maxLng) / 2,
     latitude: (minLat + maxLat) / 2,
     zoom,
-    pitch: 22,
-    bearing: 0,
+    pitch: 58,
+    bearing: -24,
   };
 }
 
@@ -145,6 +145,18 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
   const viewState = useMemo(() => initialViewState(cities), [cities]);
 
   const layers = useMemo(() => {
+    const routeArcs = new ArcLayer<RoutePath>({
+      id: "tsp-route-3d-arcs",
+      data: routePaths,
+      getSourcePosition: (route) => route.path[0],
+      getTargetPosition: (route) => route.path[1],
+      getSourceColor: [34, 211, 238, 180],
+      getTargetColor: [251, 113, 133, 210],
+      getWidth: isSearching ? 2.4 : 1.8,
+      greatCircle: true,
+      pickable: false,
+    });
+
     const routeGlow = new PathLayer<RoutePath>({
       id: "tsp-route-glow",
       data: routePaths,
@@ -191,6 +203,30 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
       pickable: true,
     });
 
+    const cityColumns = new ColumnLayer<CityMapPoint>({
+      id: "tsp-city-3d-columns",
+      data: cities,
+      getPosition: (city) => [city.lng, city.lat],
+      radius: markerRadiusMeters(cities.length, "default") * 0.55,
+      diskResolution: 18,
+      elevationScale: 1,
+      getElevation: (_city, { index }) => {
+        if (tspStartNode === index) return 78000;
+        if (tourNodeSet.has(index)) return 52000;
+        return 18000;
+      },
+      getFillColor: (_city, { index }) => {
+        if (tspStartNode === index) return [249, 115, 22, 180];
+        if (tourNodeSet.has(index)) return [34, 211, 238, 145];
+        return [15, 118, 110, 85];
+      },
+      getLineColor: [255, 255, 255, 60],
+      lineWidthMinPixels: 0.5,
+      extruded: true,
+      stroked: true,
+      pickable: false,
+    });
+
     const labels = new TextLayer<CityMapPoint>({
       id: "tsp-city-labels",
       data: cities.length <= 120 ? cities : [],
@@ -218,7 +254,7 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
       stroked: true,
     });
 
-    return [routeGlow, routeLine, probe, points, labels];
+    return [cityColumns, routeGlow, routeArcs, routeLine, probe, points, labels];
   }, [cities, isSearching, probePoint, routePaths, tick, tourNodeSet, tspStartNode]);
 
   if (cities.length === 0) {
@@ -274,7 +310,7 @@ export default function TspIndonesiaMap({ cities, tspTourEdges = [], tspStartNod
         </button>
 
         <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-lg border border-slate-900/10 bg-slate-950/75 px-3 py-2 text-xs text-white/75 shadow-lg">
-          WebGL map - {cities.length} lokasi
+          3D WebGL map - {cities.length} lokasi
           {tspTourEdges.length > 0 ? ` - ${tspTourEdges.length} edge tour` : ""}
         </div>
 
