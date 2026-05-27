@@ -2734,6 +2734,29 @@ export default function Home() {
             />
           )}
 
+          {activeTab === "nn_graph" && nnResult && (
+            <div>
+              <GraphViewToggle
+                numVertices={nnResult.totalNodes}
+                edges={nnResult.edges}
+                highlightNodes={Array.from({length: nnResult.totalNodes}, (_, i) => i)}
+                highlightEdges={[]}
+                nodePositions={(() => {
+                  const positions: {x: number; y: number}[] = [];
+                  nnResult.layerNodes.forEach((layerNodes, layerIdx) => {
+                    const y = layerIdx * 80 - (nnResult.layers.length - 1) * 40;
+                    layerNodes.forEach((nodeId, nodeIdx) => {
+                      const x = (nodeIdx - (layerNodes.length - 1) / 2) * 60;
+                      positions[nodeId] = { x, y };
+                    });
+                  });
+                  return positions;
+                })()}
+                lockNodePositions={true}
+              />
+            </div>
+          )}
+
           {/* Result Panel */}
           <ResultPanel title={`Result — ${TABS.find((t) => t.id === activeTab)?.label}`} loading={loading}>
             {renderResult()}
