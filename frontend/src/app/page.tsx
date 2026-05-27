@@ -2106,7 +2106,55 @@ export default function Home() {
             />
           ) : activeTab === "nn_graph" ? (
             <div className="glass p-5 space-y-4">
-              <h3 className="text-lg font-semibold text-white/90">Neural Network Layers</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white/90">Neural Network Layers</h3>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const presets: Record<string, LayerConfig[]> = {
+                      "mlp-4-6-4-2": [
+                        { size: 4, activation: "input" },
+                        { size: 6, activation: "relu" },
+                        { size: 4, activation: "relu" },
+                        { size: 2, activation: "softmax" },
+                      ],
+                      "deep-8-12-8-4": [
+                        { size: 8, activation: "input" },
+                        { size: 12, activation: "relu" },
+                        { size: 8, activation: "relu" },
+                        { size: 4, activation: "softmax" },
+                      ],
+                      "cnn-flat-28-16-10": [
+                        { size: 28, activation: "input" },
+                        { size: 16, activation: "relu" },
+                        { size: 10, activation: "softmax" },
+                      ],
+                      "autoenc-10-5-10": [
+                        { size: 10, activation: "input" },
+                        { size: 5, activation: "relu" },
+                        { size: 10, activation: "sigmoid" },
+                      ],
+                      "wide-6-16-16-4": [
+                        { size: 6, activation: "input" },
+                        { size: 16, activation: "relu" },
+                        { size: 16, activation: "relu" },
+                        { size: 4, activation: "softmax" },
+                      ],
+                    };
+                    if (e.target.value && presets[e.target.value]) {
+                      setNnLayers([...presets[e.target.value]]);
+                      setResult(null);
+                    }
+                  }}
+                  className="glass-input w-40 text-xs">
+                  <option value="">Preset...</option>
+                  <option value="mlp-4-6-4-2">MLP (4-6-4-2)</option>
+                  <option value="deep-8-12-8-4">Deep (8-12-8-4)</option>
+                  <option value="cnn-flat-28-16-10">CNN-Flat (28-16-10)</option>
+                  <option value="autoenc-10-5-10">Autoencoder (10-5-10)</option>
+                  <option value="wide-6-16-16-4">Wide (6-16-16-4)</option>
+                </select>
+              </div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {nnLayers.map((layer, i) => (
                   <div key={i} className="grid grid-cols-[2rem_1fr_1fr_1.5rem] gap-2 items-center">
