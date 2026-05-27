@@ -31,6 +31,8 @@ import { solveColoring } from "@/lib/coloring";
 import { solveSCC } from "@/lib/scc";
 import { solveTopoSort } from "@/lib/topo";
 import { solveEulerian } from "@/lib/euler";
+import { solvePageRank } from "@/lib/pagerank";
+import { buildNNGraph, type NNGraphResult, type LayerConfig } from "@/lib/nn-graph";
 
 const TspIndonesiaMap = dynamic(() => import("@/components/TspIndonesiaMap"), {
   ssr: false,
@@ -58,12 +60,14 @@ type Operation =
   | "vertex_coloring"
   | "strongly_connected"
   | "topo_sort"
-  | "eulerian";
+  | "eulerian"
+  | "pagerank"
+  | "nn_graph";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7" | "tugas8";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7" | "tugas8" | "tugas9";
   description: string;
   algorithm: string;
 }
@@ -91,6 +95,8 @@ const TABS: TabDef[] = [
   { id: "strongly_connected", label: "SCC", group: "tugas8", description: "Cari strongly connected components dalam directed graph (Tarjan)", algorithm: "Tarjan: DFS sambil simpan index dan lowlink. Saat lowlink = index, pop stack untuk bentuk komponen SCC. Lalu bangun condensation DAG." },
   { id: "topo_sort", label: "Topo Sort", group: "tugas8", description: "Topological sort untuk directed acyclic graph (Kahn)", algorithm: "Kahn: hitung indegree tiap node, queue node dengan indegree 0, proses satu per satu kurangi indegree tetangga. Kalau tidak semua node terproses, graf punya cycle." },
   { id: "eulerian", label: "Eulerian", group: "tugas8", description: "Cari Eulerian path/circuit dalam graf (Hierholzer)", algorithm: "Hierholzer: cek derajat ganjil (0 = circuit, 2 = path, >2 = tidak eulerian). Mulai dari node ganjil, telusuri edge sembari hapus dari adjacency, backtrack saat mentok." },
+  { id: "pagerank", label: "PageRank", group: "tugas9", description: "Hitung skor PageRank tiap node dalam directed graph", algorithm: "PageRank: iterasi power method dengan damping factor 0.85. Tiap node mendistribusikan skornya ke out-neighbor secara merata. Dangling node didistribusikan ke semua node. Konvergen saat delta < 1e-6." },
+  { id: "nn_graph", label: "NN Graph", group: "tugas9", description: "Bangun graf layer neural network dari konfigurasi layer", algorithm: "Buat DAG layered: node per layer terhubung fully-connected ke layer berikutnya. Bobot edge random [-1,1]. Hitung total parameter (weights + biases)." },
 ];
 
 const COMPONENT_COLORS = [
@@ -189,6 +195,17 @@ export default function Home() {
   const [eulerPath, setEulerPath] = useState<number[]>([]);
   const [, setEulerIsCircuit] = useState<boolean | undefined>();
   const [eulerType, setEulerType] = useState<"circuit" | "path" | "none" | undefined>();
+  const [pagerankScores, setPagerankScores] = useState<number[]>([]);
+  const [pagerankIterations, setPagerankIterations] = useState<number | undefined>();
+  const [pagerankConverged, setPagerankConverged] = useState<boolean | undefined>();
+  const [pagerankDamping, setPagerankDamping] = useState(0.85);
+  const [nnResult, setNnResult] = useState<NNGraphResult | null>(null);
+  const [nnLayers, setNnLayers] = useState<LayerConfig[]>([
+    { size: 4, activation: "input" },
+    { size: 6, activation: "relu" },
+    { size: 4, activation: "relu" },
+    { size: 2, activation: "softmax" },
+  ]);
 
   const clearAnimations = useCallback(() => {
     animationRef.current.forEach(clearTimeout);
@@ -257,6 +274,10 @@ export default function Home() {
     setEulerPath([]);
     setEulerIsCircuit(undefined);
     setEulerType(undefined);
+    setPagerankScores([]);
+    setPagerankIterations(undefined);
+    setPagerankConverged(undefined);
+    setNnResult(null);
   }, [clearAnimations]);
 
   const coordDisplayEdges = useMemo(() => {
@@ -588,6 +609,21 @@ export default function Home() {
         else { setCyclePathNodes(r.cyclePath); setHighlightNodes(r.cyclePath); }
         setLoading(false); return;
       }
+      if (activeTab === "pagerank") {
+        const r = solvePageRank(numVertices, edges, pagerankDamping);
+        setPagerankScores(r.scores);
+        setPagerankIterations(r.iterations);
+        setPagerankConverged(r.converged);
+        setResult(r as unknown as GraphResponse);
+        setHighlightNodes(Array.from({length: numVertices}, (_, i) => i));
+        setLoading(false); return;
+      }
+      if (activeTab === "nn_graph") {
+        const r = buildNNGraph(nnLayers);
+        setNnResult(r);
+        setResult(r as unknown as GraphResponse);
+        setLoading(false); return;
+      }
       if (activeTab === "eulerian") {
         const r = solveEulerian(numVertices, edges);
         setEulerPath(r.path); setEulerIsCircuit(r.isCircuit); setEulerType(r.type);
@@ -848,7 +884,7 @@ export default function Home() {
   };
 
   const isTimetabling = activeTab === "timetabling_edge_coloring";
-  const isGraphOp = activeTab !== "count_islands" && !isTimetabling;
+  const isGraphOp = activeTab !== "count_islands" && !isTimetabling && activeTab !== "nn_graph";
   const activeTabDef = TABS.find((t) => t.id === activeTab);
   const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_grasp_swap";
   const needsAB = activeTab === "check_path" || activeTab === "shortest_path" || activeTab === "max_flow";
@@ -1792,6 +1828,82 @@ export default function Home() {
           </div>
         );
 
+      case "pagerank":
+        return (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Iterasi</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">{pagerankIterations ?? 0}</p>
+              </div>
+              <div className={`rounded-xl border px-4 py-3 ${pagerankConverged ? "border-emerald-400/20 bg-emerald-400/10" : "border-amber-400/20 bg-amber-400/10"}`}>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Status</p>
+                <p className={`mt-1 font-semibold text-lg ${pagerankConverged ? "text-emerald-300" : "text-amber-300"}`}>{pagerankConverged ? "Converged" : "Max iter"}</p>
+              </div>
+              <div className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Damping</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-violet-300">{pagerankDamping}</p>
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-white/50">PageRank Score</p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {pagerankScores.map((score, i) => {
+                  const pct = score * 100;
+                  const intensity = Math.min(pct / (pagerankScores.length > 0 ? Math.max(...pagerankScores) * 100 : 1), 1);
+                  return (
+                    <span key={i} className="inline-flex items-center justify-center w-full h-10 rounded-lg text-xs font-mono font-semibold"
+                      style={{
+                        backgroundColor: `rgba(34,211,238,${0.05 + intensity * 0.25})`,
+                        border: `1px solid rgba(34,211,238,${0.2 + intensity * 0.4})`,
+                        color: `rgba(34,211,238,${0.5 + intensity * 0.5})`,
+                        transform: `scale(${0.8 + intensity * 0.4})`,
+                      }}>
+                      {score.toFixed(3)}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+
+      case "nn_graph":
+        return (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total Nodes</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">{nnResult?.totalNodes ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total Edges</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-emerald-300">{nnResult?.totalEdges ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Total Params</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-amber-300">{nnResult?.totalParams ?? 0}</p>
+              </div>
+            </div>
+            <div className="glass p-4 border-white/10">
+              <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Layer Architecture</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {nnResult?.layers.map((layer, i) => (
+                  <span key={i} className="flex items-center gap-1.5">
+                    <span className="inline-flex flex-col items-center rounded-lg border border-violet-400/30 bg-violet-400/10 px-3 py-1.5">
+                      <span className="text-sm font-mono font-bold text-violet-300">{layer.size}</span>
+                      <span className="text-[9px] uppercase text-violet-400/60">{layer.activation}</span>
+                    </span>
+                    {i < (nnResult?.layers.length ?? 0) - 1 && (
+                      <span className="text-white/25">&rarr;</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
     }
   };
 
@@ -1945,6 +2057,7 @@ export default function Home() {
               { key: "tugas6", label: "Matching & Scheduling", color: "#34d399" },
               { key: "tugas7", label: "Bandwidth", color: "#06b6d4" },
               { key: "tugas8", label: "Flow & Ordering", color: "#f472b6" },
+              { key: "tugas9", label: "AI & Learning", color: "#38bdf8" },
             ] as const;
 
             return groups.map((g) => (
@@ -1991,8 +2104,58 @@ export default function Home() {
                 setError("");
               }}
             />
+          ) : activeTab === "nn_graph" ? (
+            <div className="glass p-5 space-y-4">
+              <h3 className="text-lg font-semibold text-white/90">Neural Network Layers</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {nnLayers.map((layer, i) => (
+                  <div key={i} className="grid grid-cols-[2rem_1fr_1fr_1.5rem] gap-2 items-center">
+                    <span className="text-xs text-white/30 font-mono">L{i}</span>
+                    <input type="number" min={1} max={64} value={layer.size}
+                      onChange={(e) => {
+                        const next = [...nnLayers];
+                        next[i] = { ...next[i], size: Math.max(1, parseInt(e.target.value) || 1) };
+                        setNnLayers(next);
+                      }}
+                      className="glass-input text-center text-sm font-mono" placeholder="size"/>
+                    <select value={layer.activation}
+                      onChange={(e) => {
+                        const next = [...nnLayers];
+                        next[i] = { ...next[i], activation: e.target.value };
+                        setNnLayers(next);
+                      }}
+                      className="glass-input text-sm">
+                      <option value="input">input</option>
+                      <option value="relu">relu</option>
+                      <option value="sigmoid">sigmoid</option>
+                      <option value="tanh">tanh</option>
+                      <option value="softmax">softmax</option>
+                      <option value="linear">linear</option>
+                    </select>
+                    <button onClick={() => { if (nnLayers.length > 2) setNnLayers(nnLayers.filter((_, j) => j !== i)); }}
+                      className="text-red-400/40 hover:text-red-400 text-lg leading-none">&times;</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setNnLayers([...nnLayers, { size: 3, activation: "relu" }])}
+                className="w-full glass-btn px-3 py-2 rounded-lg text-cyan-400 text-xs font-semibold">
+                + Add Layer
+              </button>
+            </div>
           ) : isGraphOp ? (
             <>
+              {activeTab === "pagerank" && (
+                <div className="glass p-4 space-y-3">
+                  <label className="block text-xs text-white/50 uppercase tracking-wider">Damping Factor</label>
+                  <div className="flex items-center gap-3">
+                    <input type="range" min={0.5} max={0.99} step={0.01} value={pagerankDamping}
+                      onChange={(e) => setPagerankDamping(parseFloat(e.target.value))}
+                      className="flex-1 accent-cyan-400"/>
+                    <span className="text-sm font-mono text-cyan-300 w-12 text-right">{pagerankDamping}</span>
+                  </div>
+                  <p className="text-[11px] text-white/35">d = 0.85 (default Google). Makin tinggi, makin sensitif ke struktur link.</p>
+                </div>
+              )}
               {activeTab === "tsp_grasp_swap" && (
                 <div className="glass p-4">
                   <label className="block text-xs text-white/50 uppercase tracking-wider mb-2">TSP Input Mode</label>
