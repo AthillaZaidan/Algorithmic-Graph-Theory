@@ -26,6 +26,11 @@ import {
   positionsForOrder,
   solveBandwidth,
 } from "@/lib/bandwidth";
+import { solveMaxFlow, type MaxFlowResult } from "@/lib/maxflow";
+import { solveColoring } from "@/lib/coloring";
+import { solveSCC } from "@/lib/scc";
+import { solveTopoSort } from "@/lib/topo";
+import { solveEulerian } from "@/lib/euler";
 
 const TspIndonesiaMap = dynamic(() => import("@/components/TspIndonesiaMap"), {
   ssr: false,
@@ -48,12 +53,17 @@ type Operation =
   | "tsp_grasp_swap"
   | "maximum_bipartite_matching"
   | "timetabling_edge_coloring"
-  | "bandwidth";
+  | "bandwidth"
+  | "max_flow"
+  | "vertex_coloring"
+  | "strongly_connected"
+  | "topo_sort"
+  | "eulerian";
 
 interface TabDef {
   id: Operation;
   label: string;
-  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7";
+  group: "tugas1" | "tugas2" | "tugas3" | "tugas4" | "tugas5" | "tugas6" | "tugas7" | "tugas8";
   description: string;
   algorithm: string;
 }
@@ -76,6 +86,11 @@ const TABS: TabDef[] = [
   { id: "maximum_bipartite_matching", label: "Max Matching", group: "tugas6", description: "Matching maksimum pada graf bipartit (Hopcroft-Karp)", algorithm: "Hopcroft-Karp: BFS bikin layer augmenting path, DFS augment banyak path sekaligus sampai mentok." },
   { id: "timetabling_edge_coloring", label: "Timetabling", group: "tugas6", description: "Pewarnaan sisi graf bipartit untuk jadwal guru-kelas", algorithm: "Model guru-kelas sebagai graf bipartit; warna edge = periode, edge incident tidak boleh satu periode." },
   { id: "bandwidth", label: "Bandwidth", group: "tugas7", description: "Optimasi bandwidth graf dengan relabeling node", algorithm: "Cuthill-McKee: mulai dari degree kecil, BFS tetangga urut degree naik, lalu order itu dipakai relabel node." },
+  { id: "max_flow", label: "Max Flow", group: "tugas8", description: "Hitung maximum flow dari source ke sink dalam flow network", algorithm: "Ford-Fulkerson: BFS cari augmenting path, update residual capacity, ulangi sampai tidak ada path lagi. Min cut diambil dari node reachable di residual graph." },
+  { id: "vertex_coloring", label: "Coloring", group: "tugas8", description: "Pewarnaan vertex graf dengan Welsh-Powell", algorithm: "Welsh-Powell: urutkan node dari degree terbesar, warnai satu per satu dengan warna terkecil yang tidak dipakai tetangga." },
+  { id: "strongly_connected", label: "SCC", group: "tugas8", description: "Cari strongly connected components dalam directed graph (Tarjan)", algorithm: "Tarjan: DFS sambil simpan index dan lowlink. Saat lowlink = index, pop stack untuk bentuk komponen SCC. Lalu bangun condensation DAG." },
+  { id: "topo_sort", label: "Topo Sort", group: "tugas8", description: "Topological sort untuk directed acyclic graph (Kahn)", algorithm: "Kahn: hitung indegree tiap node, queue node dengan indegree 0, proses satu per satu kurangi indegree tetangga. Kalau tidak semua node terproses, graf punya cycle." },
+  { id: "eulerian", label: "Eulerian", group: "tugas8", description: "Cari Eulerian path/circuit dalam graf (Hierholzer)", algorithm: "Hierholzer: cek derajat ganjil (0 = circuit, 2 = path, >2 = tidak eulerian). Mulai dari node ganjil, telusuri edge sembari hapus dari adjacency, backtrack saat mentok." },
 ];
 
 const COMPONENT_COLORS = [
@@ -161,6 +176,19 @@ export default function Home() {
 
   const animationRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const tspFinalTourRef = useRef<{ tour: number[]; tourEdges: number[][] } | null>(null);
+  const [flowEdges, setFlowEdges] = useState<MaxFlowResult["flowEdges"]>([]);
+  const [minCutEdges, setMinCutEdges] = useState<number[][]>([]);
+  const [maxFlowValue, setMaxFlowValue] = useState<number | undefined>();
+  const [coloringColors, setColoringColors] = useState<Map<number, number>>(new Map());
+  const [chromaticNumber, setChromaticNumber] = useState<number | undefined>();
+  const [sccComponents, setSccComponents] = useState<number[][]>([]);
+  const [condensationEdgeList, setCondensationEdgeList] = useState<number[][]>([]);
+  const [topoOrder, setTopoOrder] = useState<number[]>([]);
+  const [topoIsDAG, setTopoIsDAG] = useState<boolean | undefined>();
+  const [topoCyclePath, setTopoCyclePath] = useState<number[]>([]);
+  const [eulerPath, setEulerPath] = useState<number[]>([]);
+  const [, setEulerIsCircuit] = useState<boolean | undefined>();
+  const [eulerType, setEulerType] = useState<"circuit" | "path" | "none" | undefined>();
 
   const clearAnimations = useCallback(() => {
     animationRef.current.forEach(clearTimeout);
@@ -216,6 +244,19 @@ export default function Home() {
     tspFinalTourRef.current = null;
     setTspTotalCost(undefined);
     setTspStartNode(undefined);
+    setFlowEdges([]);
+    setMinCutEdges([]);
+    setMaxFlowValue(undefined);
+    setColoringColors(new Map());
+    setChromaticNumber(undefined);
+    setSccComponents([]);
+    setCondensationEdgeList([]);
+    setTopoOrder([]);
+    setTopoIsDAG(undefined);
+    setTopoCyclePath([]);
+    setEulerPath([]);
+    setEulerIsCircuit(undefined);
+    setEulerType(undefined);
   }, [clearAnimations]);
 
   const coordDisplayEdges = useMemo(() => {
@@ -514,6 +555,52 @@ export default function Home() {
         return (await res.json()) as GraphResponse;
       };
 
+      if (activeTab === "max_flow") {
+        const r = solveMaxFlow(numVertices, edges, nodeA, nodeB);
+        setFlowEdges(r.flowEdges); setMinCutEdges(r.minCutEdges); setMaxFlowValue(r.maxFlow);
+        setResult(r as unknown as GraphResponse);
+        setHighlightNodes(Array.from(new Set(r.flowEdges.flatMap(e => [e.u, e.v]))));
+        setHighlightEdges(r.flowEdges.map(e => [e.u, e.v]));
+        setLoading(false); return;
+      }
+      if (activeTab === "vertex_coloring") {
+        const r = solveColoring(numVertices, edges);
+        setColoringColors(r.colors); setChromaticNumber(r.chromaticNumber);
+        setResult(r as unknown as GraphResponse);
+        setHighlightNodes(Array.from({length: numVertices}, (_, i) => i));
+        setLoading(false); return;
+      }
+      if (activeTab === "strongly_connected") {
+        const r = solveSCC(numVertices, edges);
+        setSccComponents(r.sccs); setCondensationEdgeList(r.condensationEdges);
+        setResult(r as unknown as GraphResponse);
+        const cm = new Map<number, string>();
+        r.sccs.forEach((comp, idx) => { const c = COMPONENT_COLORS[idx % COMPONENT_COLORS.length]; comp.forEach(n => cm.set(n, c)); });
+        setComponentColors(cm);
+        setHighlightNodes(Array.from({length: numVertices}, (_, i) => i));
+        setLoading(false); return;
+      }
+      if (activeTab === "topo_sort") {
+        const r = solveTopoSort(numVertices, edges);
+        setTopoOrder(r.order); setTopoIsDAG(r.isDAG); setTopoCyclePath(r.cyclePath);
+        setResult(r as unknown as GraphResponse);
+        if (r.isDAG) { setHighlightNodes(r.order); }
+        else { setCyclePathNodes(r.cyclePath); setHighlightNodes(r.cyclePath); }
+        setLoading(false); return;
+      }
+      if (activeTab === "eulerian") {
+        const r = solveEulerian(numVertices, edges);
+        setEulerPath(r.path); setEulerIsCircuit(r.isCircuit); setEulerType(r.type);
+        setResult(r as unknown as GraphResponse);
+        if (r.path.length > 0) {
+          setHighlightNodes(r.path);
+          const pe: number[][] = [];
+          for (let i = 0; i < r.path.length - 1; i++) pe.push([r.path[i], r.path[i+1]]);
+          setHighlightEdges(pe);
+        }
+        setLoading(false); return;
+      }
+
       try {
         if (activeTab === "bandwidth") {
           data = solveBandwidth(numVertices, edges);
@@ -764,7 +851,7 @@ export default function Home() {
   const isGraphOp = activeTab !== "count_islands" && !isTimetabling;
   const activeTabDef = TABS.find((t) => t.id === activeTab);
   const needsStart = activeTab === "dfs" || activeTab === "bfs" || activeTab === "tsp_grasp_swap";
-  const needsAB = activeTab === "check_path" || activeTab === "shortest_path";
+  const needsAB = activeTab === "check_path" || activeTab === "shortest_path" || activeTab === "max_flow";
   const needsWeightedHint = activeTab === "shortest_path" || activeTab === "min_spanning_tree" || (activeTab === "tsp_grasp_swap" && tspMode === "edge");
   const isWeightedGraph = isWeightedMode || edges.some((edge) => edge[2] !== undefined);
   const bandwidthDisplayOrder =
@@ -1553,6 +1640,158 @@ export default function Home() {
           </div>
         );
 
+      case "max_flow":
+        return (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Maximum Flow</p>
+              <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">{maxFlowValue ?? 0}</p>
+            </div>
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Flow Edges ({flowEdges.length})</p>
+              <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                {flowEdges.map((e, i) => (
+                  <motion.div key={`${e.u}-${e.v}-${i}`} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03, duration: 0.18 }} className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs font-mono">
+                    <span className="text-cyan-400">{e.u}</span>
+                    <span className="text-white/25">→ {e.flow}/{e.capacity}</span>
+                    <span className="text-violet-300">{e.v}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+            {minCutEdges.length > 0 && (
+              <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Min Cut Edges ({minCutEdges.length})</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {minCutEdges.map(([u, v], i) => (
+                    <span key={i} className="inline-flex items-center gap-1 rounded-lg border border-rose-400/30 bg-rose-400/15 px-2 py-1 text-xs font-mono text-rose-300">{u}&rarr;{v}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case "vertex_coloring":
+        return (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Chromatic Number</p>
+              <p className="mt-1 font-mono text-2xl font-bold text-amber-300">{chromaticNumber ?? 0}</p>
+            </div>
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Warna per node</p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {Array.from({ length: numVertices }, (_, i) => {
+                  const c = coloringColors.get(i) ?? -1;
+                  const palette = ["#22d3ee","#2dd4bf","#a78bfa","#f472b6","#fb923c","#facc15","#4ade80","#60a5fa","#e879f9","#34d399","#fb7185","#38bdf8","#a3e635","#fbbf24","#c084fc"];
+                  return (
+                    <span key={i} className="inline-flex items-center justify-center w-full h-9 rounded-lg text-xs font-mono font-semibold"
+                      style={{backgroundColor: c>=0 ? palette[c%palette.length]+"30" : "rgba(255,255,255,0.05)", border: c>=0 ? `1px solid ${palette[c%palette.length]}50` : "1px solid rgba(255,255,255,0.08)", color: c>=0 ? palette[c%palette.length] : "rgba(255,255,255,0.3)"}}>
+                      {c>=0 ? `${i}` : "?"}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+
+      case "strongly_connected":
+        return (
+          <div className="space-y-3">
+            <p className="text-white/60 text-xs uppercase tracking-wide">Ditemukan <span className="text-cyan-300 font-bold text-lg">{sccComponents.length}</span> SCC</p>
+            {sccComponents.map((comp, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COMPONENT_COLORS[i % COMPONENT_COLORS.length] }}/>
+                <span className="text-white/50 text-xs">SCC{i + 1}:</span>
+                <div className="flex flex-wrap gap-1">
+                  {comp.map((node) => (
+                    <span key={node} className="inline-flex items-center justify-center w-7 h-7 rounded text-xs font-mono"
+                      style={{backgroundColor: COMPONENT_COLORS[i%COMPONENT_COLORS.length]+"25", borderColor: COMPONENT_COLORS[i%COMPONENT_COLORS.length]+"50", borderWidth: 1, color: COMPONENT_COLORS[i%COMPONENT_COLORS.length]}}>
+                      {node}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {condensationEdgeList.length > 0 && (
+              <div className="glass p-3 border-violet-400/20">
+                <p className="text-xs text-white/50 mb-1">Condensation DAG</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {condensationEdgeList.map(([u, v], i) => (
+                    <span key={i} className="text-xs font-mono text-violet-300 bg-violet-400/10 px-2 py-0.5 rounded">SCC{u+1}&rarr;SCC{v+1}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case "topo_sort":
+        return (
+          <div className="space-y-3">
+            {topoIsDAG ? (
+              <>
+                <div className="flex items-center gap-2 text-emerald-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg><span className="font-semibold">Graf adalah DAG</span></div>
+                <div><p className="mb-2 text-xs uppercase tracking-wide text-white/50">Topological Order</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {topoOrder.map((node, i) => (
+                      <span key={i} className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 text-sm font-mono font-semibold">{node}</span>
+                        {i < topoOrder.length - 1 && <span className="text-emerald-400/60">&rarr;</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-amber-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg><span className="font-semibold">Graf BUKAN DAG &mdash; terdapat cycle</span></div>
+                {topoCyclePath.length > 0 && (
+                  <div className="glass p-4 border-amber-400/30">
+                    <p className="text-amber-300 font-semibold text-sm mb-2">Cycle Path:</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {topoCyclePath.map((node, i) => (
+                        <span key={i} className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-amber-400/20 border border-amber-400/40 text-amber-300 text-sm font-mono font-semibold">{node}</span>
+                          {i < topoCyclePath.length - 1 && <span className="text-amber-400/60">&rarr;</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+
+      case "eulerian":
+        return (
+          <div className="space-y-3">
+            {eulerType === "circuit" ? (
+              <div className="flex items-center gap-2 text-emerald-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg><span className="font-semibold">Eulerian Circuit</span></div>
+            ) : eulerType === "path" ? (
+              <div className="flex items-center gap-2 text-cyan-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg><span className="font-semibold">Eulerian Path</span></div>
+            ) : (
+              <div className="flex items-center gap-2 text-red-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg><span className="font-semibold">Graf tidak Eulerian</span></div>
+            )}
+            {eulerPath.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Path ({eulerPath.length} edges)</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {eulerPath.map((node, i) => (
+                    <span key={i} className="flex items-center gap-1.5">
+                      <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg text-sm font-mono font-semibold border ${i===0?"bg-emerald-400/20 border-emerald-400/40 text-emerald-300":i===eulerPath.length-1&&eulerType==="path"?"bg-amber-400/20 border-amber-400/40 text-amber-300":"bg-white/[0.05] border-white/10 text-white/70"}`}>{node}</span>
+                      {i < eulerPath.length - 1 && <span className="text-white/30">&rarr;</span>}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
     }
   };
 
@@ -1688,378 +1927,59 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* Operation Tabs */}
-      <div className="glass p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Tugas 1 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 1 — Traversal &amp; Analysis</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas1").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.12)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
+      <div className="flex gap-0 min-h-[calc(100vh-10rem)]">
+        {/* Sidebar */}
+        <aside className="sidebar w-[220px] flex-shrink-0 flex flex-col gap-1 p-3 overflow-y-auto">
+          {(() => {
+            const switchTab = (id: Operation) => {
+              setActiveTab(id);
+              clearResultState();
+            };
 
-          {/* Tugas 2 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.08 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 2 — Components &amp; Islands</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas2").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-teal-400/15 border border-teal-400/40 text-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.12)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
+            const groups = [
+              { key: "tugas1", label: "Traversal", color: "#22d3ee" },
+              { key: "tugas2", label: "Components & Islands", color: "#2dd4bf" },
+              { key: "tugas3", label: "Structure & Metrics", color: "#a78bfa" },
+              { key: "tugas4", label: "Weighted Graphs", color: "#f59e0b" },
+              { key: "tugas5", label: "TSP", color: "#fb7185" },
+              { key: "tugas6", label: "Matching & Scheduling", color: "#34d399" },
+              { key: "tugas7", label: "Bandwidth", color: "#06b6d4" },
+              { key: "tugas8", label: "Flow & Ordering", color: "#f472b6" },
+            ] as const;
 
-          {/* Tugas 3 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.16 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 3 — Advanced Checks</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas3").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setDiameterPath([]);
-                    setDiameterLength(undefined);
-                    setGirthValue(undefined);
-                    setGirthCycle([]);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? tab.id === "diameter"
-                        ? "bg-green-400/15 border border-green-400/40 text-green-300 shadow-[0_0_12px_rgba(74,222,128,0.12)]"
-                        : tab.id === "girth"
-                        ? "bg-pink-400/15 border border-pink-400/40 text-pink-300 shadow-[0_0_12px_rgba(236,72,153,0.12)]"
-                        : "bg-violet-400/15 border border-violet-400/40 text-violet-300 shadow-[0_0_12px_rgba(167,139,250,0.12)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
+            return groups.map((g) => (
+              <div key={g.key} className="sidebar-group">
+                <p className="sidebar-group-label">{g.label}</p>
+                {TABS.filter((t) => t.group === g.key).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => switchTab(tab.id)}
+                    className={`sidebar-item ${activeTab === tab.id ? "active" : ""}`}
+                    style={{ "--accent": g.color } as React.CSSProperties}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            ));
+          })()}
+        </aside>
 
-          {/* Tugas 4 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.24 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 4 — Weighted Graph</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas4").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setDiameterPath([]);
-                    setDiameterLength(undefined);
-                    setGirthValue(undefined);
-                    setGirthCycle([]);
-                    setMstEdges([]);
-                    setMstTotalWeight(undefined);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-amber-400/15 border border-amber-400/40 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.12)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+        {/* Content */}
+        <div className="flex-1 space-y-4 p-4 overflow-y-auto">
+          {/* Description */}
+          <div className="px-1 space-y-2">
+            <p className="text-white/40 text-xs">
+              {activeTabDef?.description}
+            </p>
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-cyan-300/70 mb-1">Cara algoritma</p>
+              <p className="text-xs leading-relaxed text-white/70">{activeTabDef?.algorithm}</p>
             </div>
-          </motion.div>
-
-          {/* Tugas 5 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.32 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 5 â€” Routing Heuristic</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas5").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setDiameterPath([]);
-                    setDiameterLength(undefined);
-                    setGirthValue(undefined);
-                    setGirthCycle([]);
-                    setMstEdges([]);
-                    setMstTotalWeight(undefined);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-rose-400/15 border border-rose-400/40 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.16)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Tugas 6 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.4 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 6 - Matching</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas6").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setDiameterPath([]);
-                    setDiameterLength(undefined);
-                    setGirthValue(undefined);
-                    setGirthCycle([]);
-                    setMstEdges([]);
-                    setMstTotalWeight(undefined);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-emerald-400/15 border border-emerald-400/40 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.16)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Tugas 7 */}
-          <motion.div
-            className="flex-1"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.45 }}
-          >
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">Tugas 7 - Bandwidth</p>
-            <div className="flex flex-wrap gap-1.5">
-              {TABS.filter((t) => t.group === "tugas7").map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setResult(null);
-                    setError("");
-                    setHighlightNodes([]);
-                    setHighlightEdges([]);
-                    setComponentColors(new Map());
-                    setIslandLabels(undefined);
-                    setIslandCount(undefined);
-                    setBipartiteColors(new Map());
-                    setCyclePathNodes([]);
-                    setDiameterPath([]);
-                    setDiameterLength(undefined);
-                    setGirthValue(undefined);
-                    setGirthCycle([]);
-                    setMstEdges([]);
-                    setMstTotalWeight(undefined);
-                    setBandwidthScanEdge(undefined);
-                    setBandwidthBestEdges([]);
-                    setBandwidthBestValue(undefined);
-                    setBandwidthNodePositions(undefined);
-                    setBandwidthAnimatedOrder([]);
-                    setTspTour([]);
-                    setTspTourEdges([]);
-                    setTspTotalCost(undefined);
-                    setTspStartNode(undefined);
-                    clearAnimations();
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? "bg-cyan-400/15 border border-cyan-400/40 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.16)]"
-                      : "glass-btn text-white/60 hover:text-white/90"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Description */}
-        <div className="mt-3 px-1 space-y-2">
-          <p className="text-white/40 text-xs">
-            {activeTabDef?.description}
-          </p>
-          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wider text-cyan-300/70 mb-1">Cara algoritma</p>
-            <p className="text-xs leading-relaxed text-white/70">{activeTabDef?.algorithm}</p>
           </div>
-        </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="grid lg:grid-cols-5 gap-6">
+	      {/* Main Content */}
+	      <div className="grid lg:grid-cols-5 gap-6">
         {/* Left: Input Panel */}
         <div className="lg:col-span-2 space-y-4">
           {isTimetabling ? (
@@ -2608,6 +2528,8 @@ export default function Home() {
             {renderResult()}
           </ResultPanel>
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );
