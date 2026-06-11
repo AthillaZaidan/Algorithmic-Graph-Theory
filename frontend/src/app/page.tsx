@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useMemo, type ChangeEvent } from "react"
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import BandwidthD3Visualizer from "@/components/BandwidthD3Visualizer";
+import CourseTimetableCalendar from "@/components/CourseTimetableCalendar";
+import CourseTimetablingInput from "@/components/CourseTimetablingInput";
 import GraphInput from "@/components/GraphInput";
 import GraphViewToggle from "@/components/GraphViewToggle";
 import GridVisualizer from "@/components/GridVisualizer";
@@ -33,6 +35,12 @@ import { solveTopoSort } from "@/lib/topo";
 import { solveEulerian } from "@/lib/euler";
 import { solvePageRank } from "@/lib/pagerank";
 import { buildNNGraph, type NNGraphResult, type LayerConfig } from "@/lib/nn-graph";
+import {
+  createDefaultCourseTimetablingConfig,
+  solveCourseTimetabling,
+  type CourseTimetablingConfig,
+  type CourseTimetablingResult,
+} from "@/lib/course-timetabling";
 
 const TspIndonesiaMap = dynamic(() => import("@/components/TspIndonesiaMap"), {
   ssr: false,
@@ -128,6 +136,11 @@ export default function Home() {
     limitedRooms: false,
     roomLimit: 2,
   });
+  const [timetablingMode, setTimetablingMode] = useState<"course" | "matrix">("course");
+  const [courseTimetabling, setCourseTimetabling] = useState<CourseTimetablingConfig>(() =>
+    createDefaultCourseTimetablingConfig()
+  );
+  const [courseTimetablingResult, setCourseTimetablingResult] = useState<CourseTimetablingResult | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GraphResponse | null>(null);
@@ -278,6 +291,7 @@ export default function Home() {
     setPagerankIterations(undefined);
     setPagerankConverged(undefined);
     setNnResult(null);
+    setCourseTimetablingResult(null);
   }, [clearAnimations]);
 
   const coordDisplayEdges = useMemo(() => {
@@ -532,6 +546,14 @@ export default function Home() {
   const runOperation = async () => {
     setLoading(true);
     clearResultState();
+
+    if (activeTab === "timetabling_edge_coloring" && timetablingMode === "course") {
+      const data = solveCourseTimetabling(courseTimetabling.courses, courseTimetabling.rooms);
+      setCourseTimetablingResult(data);
+      setResult({ success: true, periodCount: data.timeslots.length } as GraphResponse);
+      setLoading(false);
+      return;
+    }
 
     const body: GraphRequest = { operation: activeTab };
 
@@ -1179,6 +1201,75 @@ export default function Home() {
         );
 
       case "timetabling_edge_coloring": {
+        if (timetablingMode === "course") {
+          const data = courseTimetablingResult;
+          const scheduled = data?.scheduled ?? [];
+          const conflictFree = (data?.hardConflictCount ?? 0) === 0;
+
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className={`rounded-xl border px-4 py-3 ${conflictFree ? "border-emerald-400/20 bg-emerald-400/10" : "border-red-400/20 bg-red-400/10"}`}>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Hard Conflict</p>
+                  <p className={`mt-1 font-mono text-2xl font-bold ${conflictFree ? "text-emerald-300" : "text-red-300"}`}>{data?.hardConflictCount ?? 0}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Sesi/Minggu</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-cyan-300">{scheduled.length}</p>
+                </div>
+                <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Room Issue</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-amber-300">{data?.roomOverflowCount ?? 0}</p>
+                </div>
+                <div className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Gap Dosen</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-violet-300">{data?.lecturerGapScore ?? 0}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Metode</p>
+                <p className="mt-2 text-sm text-white/65">
+                  Course Planner membentuk conflict graph dari dosen, angkatan, dan sesi mata kuliah yang sama, lalu memberi warna timeslot dengan heuristik DSATUR. Setelah itu sesi dipasangkan ke ruangan yang kapasitasnya mencukupi.
+                </p>
+              </div>
+
+              {data && (
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Beban Harian</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(data.dailyLoad).map(([day, count]) => (
+                      <span key={day} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs">
+                        <span className="text-cyan-200">{day}</span>
+                        <span className="text-white/35">=</span>
+                        <span className="font-mono text-white/75">{count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-wide text-white/50">Sesi Terjadwal</p>
+                <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                  {scheduled.map((session) => (
+                    <div key={session.id} className="rounded-lg bg-white/[0.03] px-3 py-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-semibold text-cyan-300">{session.code}</span>
+                        <span className="text-white/65">{session.name}</span>
+                        <span className="ml-auto font-mono text-amber-300">{session.slot.dayName} {session.slot.start}-{session.slot.end}</span>
+                      </div>
+                      <p className="mt-1 text-white/38">
+                        {session.className} | {session.lecturer} | {session.room?.name ?? "Ruang TBA"} | {session.students} mahasiswa
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
         const assignments = result.assignments ?? [];
         const periodCount = result.periodCount ?? 0;
         const schedule = Array.from({ length: timetabling.teacherCount }, () =>
@@ -2096,14 +2187,53 @@ export default function Home() {
         {/* Left: Input Panel */}
         <div className="lg:col-span-2 space-y-4">
           {isTimetabling ? (
-            <TimetablingInput
-              value={timetabling}
-              onChange={(next) => {
-                setTimetabling(next);
-                setResult(null);
-                setError("");
-              }}
-            />
+            <div className="space-y-4">
+              <div className="glass p-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ["course", "Course Planner"],
+                    ["matrix", "Matrix Edge Coloring"],
+                  ] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setTimetablingMode(mode);
+                        clearResultState();
+                      }}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                        timetablingMode === mode
+                          ? "border border-cyan-300/45 bg-cyan-300/15 text-cyan-200"
+                          : "glass-btn text-white/55 hover:text-white/85"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {timetablingMode === "course" ? (
+                <CourseTimetablingInput
+                  value={courseTimetabling}
+                  onChange={(next) => {
+                    setCourseTimetabling(next);
+                    setResult(null);
+                    setCourseTimetablingResult(null);
+                    setError("");
+                  }}
+                />
+              ) : (
+                <TimetablingInput
+                  value={timetabling}
+                  onChange={(next) => {
+                    setTimetabling(next);
+                    setResult(null);
+                    setError("");
+                  }}
+                />
+              )}
+            </div>
           ) : activeTab === "nn_graph" ? (
             <div className="glass p-5 space-y-4">
               <div className="flex items-center justify-between">
@@ -2725,7 +2855,11 @@ export default function Home() {
             </div>
           )}
 
-          {isTimetabling && (
+          {isTimetabling && timetablingMode === "course" && (
+            <CourseTimetableCalendar result={courseTimetablingResult} />
+          )}
+
+          {isTimetabling && timetablingMode === "matrix" && (
             <TimetableVisualizer
               teacherCount={timetabling.teacherCount}
               classCount={timetabling.classCount}
